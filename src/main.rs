@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::f64::{INFINITY, NEG_INFINITY, NAN};
 use std::collections::HashMap;
-use math::round;
+//use math::round;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::thread;
@@ -18,7 +18,7 @@ static OFFSET: f64 = 1e-3;
 /// ROUND defines the rounding of f64 to u64 for Point struct. This is necessary to implement
 /// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
 /// intersection points and how they are connected.
-static ROUND: i8 = 7;
+static ROUND: i32 = 10000000;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -41,14 +41,22 @@ impl fmt::Display for Point {
         write!(f, "{},{},{}", self.x, self.y, self.z)
     }
 }
+fn half_down(x:f64)->i64{
+    let x2 = (x*(ROUND as f64)*10.0).trunc() as i64;
+    let x3 = (x*(ROUND)as f64).trunc() as i64 *10;
+    let out;
+    if (x2-x3)>5{ out = (x2+5)/10}
+    else {out = x2/10}
+    return out;
+}
 
 /// implements PartialEq for Point. x, y, and z are rounded to nearest OFFSET and compared.
 /// Necessary for implementing HashMap.
 impl PartialEq for Point {
     fn eq(&self, other: &Self) -> bool {
-        return (math::round::half_down(self.x,ROUND) == math::round::half_down(other.x,ROUND))&
-            (math::round::half_down(self.y,ROUND) == math::round::half_down(other.y,ROUND)) &
-            (math::round::half_down(self.z,ROUND) == math::round::half_down(other.z,ROUND));
+        return (half_down(self.x) == half_down(other.x))&
+            (half_down(self.y) == half_down(other.y)) &
+            (half_down(self.z) == half_down(other.z));
         /*  let spx = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
           let spy = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
           let spz = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
@@ -62,6 +70,8 @@ impl PartialEq for Point {
 /// implements Eq for Point
 impl Eq for Point {}
 
+
+
 /// implements Hash for Point. Rounds x, y, and z to nearest ROUND, and takes 128 * x + 32 *y + z.
 /// Multiplies the value by 10^ROUND and converts it to u64
 impl Hash for Point {
@@ -71,10 +81,10 @@ impl Hash for Point {
         // let x = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
         // let y = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
         //let z = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-        let x = math::round::half_down(self.x,ROUND);
-        let y = math::round::half_down(self.y,ROUND);
-        let z = math::round::half_down(self.z,ROUND);
-        let pp = (math::round::half_down((x * 128.0+ y * 32.0 + z),ROUND)).powi(ROUND as i32) as u64;
+        let x = half_down(self.x) as f64;
+        let y = half_down(self.y) as f64;
+        let z = half_down(self.z) as f64;
+        let pp = (half_down((x * 64.0+ y * 32.0 + z) as f64));
         //let pp = x*100.0+y*10.0+z;
         pp.hash(state);
     }
@@ -368,7 +378,7 @@ impl StlFileSlicer {
             all_collector.push(mpth);
         }*/
         let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
-        let all_collector = iterator.par_iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect::<Vec<Vec<Vec<Point>>>>();
+        let all_collector = iterator.iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect::<Vec<Vec<Vec<Point>>>>();
         return all_collector
     }
 
@@ -403,7 +413,7 @@ fn main() {
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
 
-    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\08.sphere_s3d.stl");
+    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\rider.stl");
    // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
     let stl_slicer = StlFileSlicer::new(new_stl_file,0.36);
     let movepath = stl_slicer.generate_path_for_all();
