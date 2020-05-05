@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use math::round;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::hash::BuildHasherDefault;
-use nohash_hasher::NoHashHasher;
+//use std::hash::BuildHasherDefault;
+//use nohash_hasher::NoHashHasher;
 //use std::intrinsics::roundf32;
 
 static OFFSET: f64 = 1e-3;
@@ -320,7 +320,7 @@ fn main() {
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
     let mut file3 = File::create("c:\\rustFiles\\movepath.csv").expect("cant create file");
-    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\07.tesla.stl".to_string());
+    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\08.sphere.stl".to_string());
     // let mut file3 = File::create("/mnt/c/rustFiles/movepath.csv").expect("cant create file");
     // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/sphere.stl".to_string());
     /* for i in &new_stl_file.trivals{
