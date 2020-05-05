@@ -1,15 +1,11 @@
-extern crate rayon;
 use std::{fmt, mem};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::f64::{INFINITY, NEG_INFINITY, NAN};
 use std::collections::HashMap;
-//use math::round;
+use math::round;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::thread;
-use rayon::prelude::*;
-//use rayon::prelude::*;
 
 /// OFFSET defines the offset for generating slices. First slice is below the minimum z-value of the
 /// model and last slice is above the maximum z-value of the model.
@@ -18,7 +14,7 @@ static OFFSET: f64 = 1e-3;
 /// ROUND defines the rounding of f64 to u64 for Point struct. This is necessary to implement
 /// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
 /// intersection points and how they are connected.
-static ROUND: i32 = 10000000;
+static ROUND: u32 = 100000;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -41,6 +37,7 @@ impl fmt::Display for Point {
         write!(f, "{},{},{}", self.x, self.y, self.z)
     }
 }
+
 fn half_down(x:f64)->i64{
     let x2 = (x*(ROUND as f64)*10.0).trunc() as i64;
     let x3 = (x*(ROUND)as f64).trunc() as i64 *10;
@@ -49,7 +46,6 @@ fn half_down(x:f64)->i64{
     else {out = x2/10}
     return out;
 }
-
 /// implements PartialEq for Point. x, y, and z are rounded to nearest OFFSET and compared.
 /// Necessary for implementing HashMap.
 impl PartialEq for Point {
@@ -70,8 +66,6 @@ impl PartialEq for Point {
 /// implements Eq for Point
 impl Eq for Point {}
 
-
-
 /// implements Hash for Point. Rounds x, y, and z to nearest ROUND, and takes 128 * x + 32 *y + z.
 /// Multiplies the value by 10^ROUND and converts it to u64
 impl Hash for Point {
@@ -81,10 +75,10 @@ impl Hash for Point {
         // let x = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
         // let y = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
         //let z = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-        let x = half_down(self.x) as f64;
-        let y = half_down(self.y) as f64;
-        let z = half_down(self.z) as f64;
-        let pp = (half_down((x * 64.0+ y * 32.0 + z) as f64));
+        let x = half_down(self.x);
+        let y = half_down(self.y);
+        let z = half_down(self.z);
+        let pp = (x+y/16+z/128) as u64;
         //let pp = x*100.0+y*10.0+z;
         pp.hash(state);
     }
@@ -290,9 +284,9 @@ impl StlFileSlicer {
     /// find unique points and edges created by intersection of triangles and a plane. Unique
     /// vertices are stored as a HashMap and edges refer to the index of the vertex.
     pub fn find_unique_points_and_edges(edges_input: Vec<[Point; 2]>) -> (HashMap<usize, Point>, Vec<[usize; 2]>) {
-        let mut points: HashMap<usize, Point> = HashMap::with_capacity(40000);
-        let mut reverse_points: HashMap<Point, usize> = HashMap::with_capacity(40000);
-        let mut edges = Vec::with_capacity(40000);
+        let mut points: HashMap<usize, Point> = HashMap::with_capacity(8000);
+        let mut reverse_points: HashMap<Point, usize> = HashMap::with_capacity(8000);
+        let mut edges = Vec::with_capacity(8000);
         let mut points_counter: usize = 0;
         let mut edges_counter: usize = 0;
         for i in edges_input {
@@ -318,8 +312,8 @@ impl StlFileSlicer {
     /// Gives spurious results if a point is connected to more than two points. Output is Vec<Vec<
     /// Points>> -> list of vectors for each loop in a plane.
     pub fn generate_path_for_layer(start_pt: &u32, points_and_edges: (HashMap<usize, Point>, Vec<[usize; 2]>)) -> Vec<Vec<Point>> {
-        let mut collector = Vec::with_capacity(40000);
-        let mut vertices = Vec::with_capacity(40000);
+        let mut collector = Vec::with_capacity(5000);
+        let mut vertices = Vec::with_capacity(5000);
         vertices.reserve(points_and_edges.0.len());
         for i in 0..points_and_edges.0.len() {
             //let mut m = [0,0];
@@ -336,7 +330,7 @@ impl StlFileSlicer {
         }
         for i in 0..marked.len() {
             if !marked[i] {
-                let mut little_collector: Vec<Point> = Vec::with_capacity(400000);
+                let mut little_collector: Vec<Point> = Vec::with_capacity(5000);
                 little_collector.push(points_and_edges.0.get(&(i)).expect("no such key").clone());
                 marked[i] = true;
                 let mut next = i;
@@ -368,29 +362,16 @@ impl StlFileSlicer {
         let mut all_collector: Vec<Vec<Vec<Point>>> = Vec::with_capacity(self.slices.len().clone());
         let mut total = self.slices.len().clone() - 1;
         let mut counter = 0;
-       /* for kk in 0..self.slices.len().clone() {
+        for kk in 0..self.slices.len().clone() {
             println!("layer no {}, out of {}", counter, total);
             counter = counter + 1;
-           // let ips = self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk]);
-          //  let upe = StlFileSlicer::find_unique_points_and_edges(ips);
-           // let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
-            let mpth = self.calc_ips_upe_mpth(&find_layers,kk);
+            let ips = self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk]);
+            let upe = StlFileSlicer::find_unique_points_and_edges(ips);
+            let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
             all_collector.push(mpth);
-        }*/
-        let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
-        let all_collector = iterator.iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect::<Vec<Vec<Vec<Point>>>>();
+        }
         return all_collector
     }
-
-    /// convenience function to implement iter.map on the data to implement parallel processing
-    fn calc_ips_upe_mpth(&self, find_layers:&Vec<Vec<usize>>,kk:usize)->Vec<Vec<Point>>{
-        println!("{} out of {}",kk,self.slices.len().clone()-1);
-        let ips = self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk]);
-        let upe = StlFileSlicer::find_unique_points_and_edges(ips);
-        let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
-        return mpth;
-    }
-
     /// write the movepath for the model. The continuous loops are separated by NaN,NaN,NaN, and the
     /// layers are separed by NaN,NaN,NaN.
     pub fn write_movepath_to_file(movepath:Vec<Vec<Vec<Point>>>, filename:&str){
