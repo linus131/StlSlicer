@@ -1,11 +1,11 @@
 use std::{fmt, mem};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, BufWriter};
 use std::f64::{INFINITY, NEG_INFINITY, NAN};
 use std::collections::HashMap;
-use math::round;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+use rayon::prelude::*;
 
 /// OFFSET defines the offset for generating slices. First slice is below the minimum z-value of the
 /// model and last slice is above the maximum z-value of the model.
@@ -14,7 +14,7 @@ static OFFSET: f64 = 1e-3;
 /// ROUND defines the rounding of f64 to u64 for Point struct. This is necessary to implement
 /// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
 /// intersection points and how they are connected.
-static ROUND: u32 = 100000;
+static ROUND: u32 = 1000000;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -78,7 +78,7 @@ impl Hash for Point {
         let x = half_down(self.x);
         let y = half_down(self.y);
         let z = half_down(self.z);
-        let pp = (x+y/16+z/128) as u64;
+        let pp = (x*64+y) as u64;
         //let pp = x*100.0+y*10.0+z;
         pp.hash(state);
     }
@@ -284,9 +284,9 @@ impl StlFileSlicer {
     /// find unique points and edges created by intersection of triangles and a plane. Unique
     /// vertices are stored as a HashMap and edges refer to the index of the vertex.
     pub fn find_unique_points_and_edges(edges_input: Vec<[Point; 2]>) -> (HashMap<usize, Point>, Vec<[usize; 2]>) {
-        let mut points: HashMap<usize, Point> = HashMap::with_capacity(8000);
-        let mut reverse_points: HashMap<Point, usize> = HashMap::with_capacity(8000);
-        let mut edges = Vec::with_capacity(8000);
+        let mut points: HashMap<usize, Point> = HashMap::with_capacity(40000);
+        let mut reverse_points: HashMap<Point, usize> = HashMap::with_capacity(40000);
+        let mut edges = Vec::with_capacity(40000);
         let mut points_counter: usize = 0;
         let mut edges_counter: usize = 0;
         for i in edges_input {
@@ -312,8 +312,8 @@ impl StlFileSlicer {
     /// Gives spurious results if a point is connected to more than two points. Output is Vec<Vec<
     /// Points>> -> list of vectors for each loop in a plane.
     pub fn generate_path_for_layer(start_pt: &u32, points_and_edges: (HashMap<usize, Point>, Vec<[usize; 2]>)) -> Vec<Vec<Point>> {
-        let mut collector = Vec::with_capacity(5000);
-        let mut vertices = Vec::with_capacity(5000);
+        let mut collector = Vec::with_capacity(40000);
+        let mut vertices = Vec::with_capacity(40000);
         vertices.reserve(points_and_edges.0.len());
         for i in 0..points_and_edges.0.len() {
             //let mut m = [0,0];
@@ -323,7 +323,13 @@ impl StlFileSlicer {
             vertices[i[0]].push(i[1]);
             vertices[i[1]].push(i[0]);
         }
-
+       /// This is written for bad stl files that have a non-closing loop
+        for i in 0..vertices.len(){
+            if vertices[i].len()==1{
+                let selfpoint = vertices[i][0].clone();
+                vertices[i].push(selfpoint);
+            }
+        }
         let mut marked = Vec::new();
         for i in 0..vertices.len() {
             marked.push(false);
@@ -356,26 +362,39 @@ impl StlFileSlicer {
 
     /// generates path for all layers in the StlFileSlicer. Output is Vec<Vec<Vec<Points>>> ->
     /// a vector of (vector of ( vector of (for each point in loop) for each closed loop) for each
-    /// layer)
-    pub fn generate_path_for_all(&self) -> Vec<Vec<Vec<Point>>>{
+    /// layer). Parallel version. Serial version is below
+    pub fn generate_path_for_all_par(&self) -> Vec<Vec<Vec<Point>>>{
         let find_layers = self.find_intersecting_triangles();
         let mut all_collector: Vec<Vec<Vec<Point>>> = Vec::with_capacity(self.slices.len().clone());
         let mut total = self.slices.len().clone() - 1;
         let mut counter = 0;
-        for kk in 0..self.slices.len().clone() {
-            println!("layer no {}, out of {}", counter, total);
-            counter = counter + 1;
-            let ips = self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk]);
-            let upe = StlFileSlicer::find_unique_points_and_edges(ips);
-            let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
-            all_collector.push(mpth);
-        }
-        return all_collector
+        let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
+        let mut all_collector = Vec::with_capacity(self.slices.len().clone());
+         iterator.par_iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect_into_vec(&mut all_collector);
+        return all_collector;
+    }
+
+    /// regular serial version of generate_path_for_all
+    pub fn generate_path_for_all(&self) -> Vec<Vec<Vec<Point>>>{
+        let find_layers = self.find_intersecting_triangles();
+        let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
+        let all_collector = iterator.iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect::<Vec<Vec<Vec<Point>>>>();
+        return all_collector;
+    }
+
+    /// convenience function to implement iter.map on the data to implement parallel processing
+    fn calc_ips_upe_mpth(&self, find_layers:&Vec<Vec<usize>>,kk:usize)->Vec<Vec<Point>>{
+        println!("{} out of {}",kk,self.slices.len().clone()-1);
+        let ips = self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk]);
+        let upe = StlFileSlicer::find_unique_points_and_edges(ips);
+        let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
+        return mpth;
     }
     /// write the movepath for the model. The continuous loops are separated by NaN,NaN,NaN, and the
     /// layers are separed by NaN,NaN,NaN.
     pub fn write_movepath_to_file(movepath:Vec<Vec<Vec<Point>>>, filename:&str){
-        let mut file3 = File::create(filename).expect("can't create file");
+        let mut file = File::create(filename).expect("can't create file");
+        let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
         for i in movepath{
             for j in i{
                 for k in j{
@@ -394,11 +413,11 @@ fn main() {
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
 
-    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\rider.stl");
+    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\10.bear.stl");
    // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
-    let stl_slicer = StlFileSlicer::new(new_stl_file,0.36);
+    let stl_slicer = StlFileSlicer::new(new_stl_file,0.1);
     let movepath = stl_slicer.generate_path_for_all();
-    StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
+    //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
 
 }
