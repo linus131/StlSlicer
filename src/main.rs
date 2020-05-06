@@ -14,7 +14,7 @@ static OFFSET: f64 = 1e-3;
 /// ROUND defines the rounding of f64 to u64 for Point struct. This is necessary to implement
 /// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
 /// intersection points and how they are connected.
-static ROUND: u32 = 1000000;
+static ROUND: u32 = 4294967295;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -56,7 +56,6 @@ impl PartialEq for Point {
         /*  let spx = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
           let spy = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
           let spz = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-
           let opx = (math::round::half_down(other.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
           let opy = (math::round::half_down(other.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
           let opz = (math::round::half_down(other.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
@@ -323,7 +322,7 @@ impl StlFileSlicer {
             vertices[i[0]].push(i[1]);
             vertices[i[1]].push(i[0]);
         }
-       /// This is written for bad stl files that have a non-closing loop
+        /// This is written for bad stl files that have a non-closing loop
         for i in 0..vertices.len(){
             if vertices[i].len()==1{
                 let selfpoint = vertices[i][0].clone();
@@ -370,7 +369,7 @@ impl StlFileSlicer {
         let mut counter = 0;
         let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
         let mut all_collector = Vec::with_capacity(self.slices.len().clone());
-         iterator.par_iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect_into_vec(&mut all_collector);
+        iterator.par_iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect_into_vec(&mut all_collector);
         return all_collector;
     }
 
@@ -398,9 +397,9 @@ impl StlFileSlicer {
         for i in movepath{
             for j in i{
                 for k in j{
-                write!(file3, "{}\n", k);
+                    write!(file3, "{}\n", k);
                 }
-            write!(file3, "NaN,NaN,NaN\n");
+                write!(file3, "NaN,NaN,NaN\n");
             }
             write!(file3, "NaN,NaN,NaN\n");
         }
@@ -413,11 +412,11 @@ fn main() {
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
 
-    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\coneb.stl");
-   // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
-    let stl_slicer = StlFileSlicer::new(new_stl_file,0.1);
+    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\baby_yoda_v2.2.stl");
+    // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
+    let stl_slicer = StlFileSlicer::new(new_stl_file,0.38);
     let movepath = stl_slicer.generate_path_for_all();
-    //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
+    StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
 
 }
