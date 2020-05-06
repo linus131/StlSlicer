@@ -413,7 +413,7 @@ fn main() {
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
 
-    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\10.bear.stl");
+    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustFiles\\coneb.stl");
    // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
     let stl_slicer = StlFileSlicer::new(new_stl_file,0.1);
     let movepath = stl_slicer.generate_path_for_all();
