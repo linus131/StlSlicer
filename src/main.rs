@@ -359,7 +359,7 @@ impl StlFileSlicer {
 
             if (ip1.isValid() && ip2.isValid()) { intersection_points.push([ip1, ip2]) };
             if (ip3.isValid() && ip2.isValid()) { intersection_points.push([ip3, ip2]) };
-            if (ip1.isValid() && ip3.isValid()) { intersection_points.push([ip1, ip3]) };
+            if (ip3.isValid() && ip1.isValid()) { intersection_points.push([ip3, ip1]) };
         }
     }
 
@@ -438,28 +438,37 @@ impl StlFileSlicer {
                 marked.push(false);
             }
             for i in 0..marked.len() {
+
                 if !marked[i] {
                     //collector: Vec<Point> = Vec::with_capacity(2000);
                     // println!("error at {}",i);
                     collector.push(points.get(&(i)).expect("no such key").clone());
                     marked[i] = true;
                     let mut next = i;
-                    while (!marked[vertices[next][0] as usize] | !marked[vertices[next][1] as usize]) {
-                        if !marked[vertices[next][0] as usize] {
-                            marked[vertices[next][0] as usize] = true;
+                    while (!marked[vertices[next][0]] || !marked[vertices[next][1]]) {
+                        if !marked[vertices[next][0]] {
+                            marked[vertices[next][0]] = true;
                             collector.push(points.get(&(vertices[next][0])).expect("no such key").clone());
-                            next = vertices[next][0] as usize;
-                        } else if !marked[vertices[next][1] as usize] {
-                            marked[vertices[next][1] as usize] = true;
+                            next = vertices[next][0] ;
+                        } else if !marked[vertices[next][1] ] {
+                            marked[vertices[next][1]] = true;
                             collector.push(points.get(&(vertices[next][1])).expect("no such key").clone());
-                            next = vertices[next][1] as usize;
+                            next = vertices[next][1] ;
                         } else {
                             println!("something weird has just happened. check stl file or repair");
                         }
+
                     }
-                    collector.push(points.get(&(i)).expect("no such key").clone());
+                    //loop closing if loop //bad stl files with unclosed geometry will have unclosed loops
+                    if vertices[next][1] == i {
+                        collector.push(points.get(&(vertices[next][1])).expect("no such key").clone());}
+                    else if vertices[next][0] == i {
+                        collector.push(points.get(&(vertices[next][0])).expect("no such key").clone());
+                    }
+                    //collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
                     collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
                 }
+
 
 
 
@@ -521,7 +530,7 @@ impl StlFileSlicer {
     /// parallel version of generate_path_for_all
     pub fn generate_path_for_all(&self) -> Vec<Vec<Point>>{
         let maxthreads = num_cpus::get_physical()+1;
-        println!("using all {} cpus", maxthreads);
+        println!("using all {} cpus", maxthreads-1);
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(maxthreads)
             .build()
@@ -659,30 +668,40 @@ fn main() {
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
     println!("read file start");
-    //let tic = Instant::now();
+    let tic = Instant::now();
     let new_stl_file = StlFile::read_binary_stl_file(&*args[1]);//"c:\\rustfiles\\07.tesla.stl");
     //let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustfiles/10.bear.stl");
-    //let toc = tic.elapsed();
-    // println!("read file end, {:?}", toc);
+    let toc = tic.elapsed();
+    println!("read file end \n time taken to read file, {:?}", toc);
     //let mut data = vec![-100.0, 100.0, 0.0, 0.0, 0.0, 214.45069885253906, 100.0, 100.0, 0.0, 100.0, 100.0, 0.0, 0.0, 0.0, 214.45069885253906, 100.0, -100.0, 0.0, 100.0, -100.0, 0.0, 0.0, 0.0, 214.45069885253906, -100., -100., 0., -100., -100., 0., 0., 0., 214.45069885253906, -100., 100., 0., 100., 100., 0., -100., 100., 0., 100., -100.0, 0.0, 100.0, -100.0, 0.0, -100.0, 100.0, 0.0, -100.0, -100.0,101.0, 0.0];
 
     //let new_stl_file = StlFile::new(data);
     //println!("{},{},{},{:?},{}",new_stl_file.num_tri, new_stl_file.minz, new_stl_file.maxz,new_stl_file.trivals, new_stl_file.info);
     // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
     //let stl_slicer = StlFileSlicer::new(new_stl_file,1.0);
+
     let stl_slicer = StlFileSlicer::new(new_stl_file,args[2].parse::<f64>().expect("not working"));
 
     println!("slicing start");
 
     let movepath;
     if args[3] == "parallel"{
+        let tic = Instant::now();
         movepath = stl_slicer.generate_path_for_all();
+        let toc = tic.elapsed();
+        println!("time taken to slice total, {:?}", toc);
     } else{
+        let tic = Instant::now();
         movepath = stl_slicer.generate_path_for_all_serial();
+        let toc = tic.elapsed();
+        println!("time taken to slice total, {:?}", toc);
     }
 
     if args[4] == "write" {
+        let tic = Instant::now();
         StlFileSlicer::write_movepath_to_file(movepath, &*args[5]);
+        let toc = tic.elapsed();
+        println!("time taken to write file {:?}",toc);
     }
     //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
