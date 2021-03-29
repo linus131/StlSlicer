@@ -20,7 +20,7 @@ static OFFSET: f64 = 1e-3;
 /// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
 /// intersection points and how they are connected.
 static ROUND: u32 = 4294967295;
-static EPSILON:f64 = 1e-10;
+static EPSILON:f64 = 1e-12;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -80,13 +80,7 @@ impl Ord for Point {
     fn cmp(&self, other: &Self) -> Ordering {
         return if iseq(self.x, other.x) {
             if iseq(self.y, other.y) {
-                if iseq(self.z, other.z) {
-                    Ordering::Equal
-                } else if self.z > other.z {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
+                Ordering::Equal
             } else if self.y > other.y {
                 Ordering::Greater
             } else {
@@ -401,7 +395,7 @@ impl StlFileSlicer {
     /// point is connected to two other points. Panics if a point is connected to only one point.
     /// Gives spurious results if a point is connected to more than two points. Output is Vec<Vec<
     /// Points>> -> list of vectors for each loop in a plane.
-    pub fn generate_path_for_layer(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>, collector: &mut Vec<Point>, vertices: &mut Vec<[usize;2]>,  marked:&mut Vec<bool>, vertex_filled: &mut Vec<bool>) {
+    pub fn generate_path_for_layer(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>, collector: &mut Vec<Point>, vertices: &mut Vec<Vec<usize>>,  marked:&mut Vec<bool>, vertex_filled: &mut Vec<bool>) {
         //let mut collector = Vec::with_capacity(points_and_edges.0.len()+4000);
         //let mut vertices = Vec::with_capacity(points_and_edges.0.len()+4000);
         //let separation_pts = Vec<usize>;
@@ -416,36 +410,25 @@ impl StlFileSlicer {
              vertices.push(Vec::with_capacity(2));
          }*/
         //et vertex_filled:Vec<bool> = vec![false; points.len()];
-        for i in 0..vertex_filled.len(){
-            vertex_filled[i] = false;
+        //vertices.clear();
+        // let mut vertices = Vec::with_capacity(10000);
+        for i in 0..points.len() {
+            //let mut m = [0,0];
+            vertices[i].clear();
+            //vertices.push(Vec::new());
         }
-        for i in 0..points.len(){
-            vertices[i][0] = 0;
-            vertices[i][1] = 0;
-        }
-
-        for i in edges{
-            if !vertex_filled[i[0]] {
-                vertices[i[0]][0] = i[1];
-            }
-            else{
-                vertices[i[0]][1] = i[1];
-            }
-            if !vertex_filled[i[1]] {
-                vertices[i[1]][0] = i[0];
-            }
-            else{
-                vertices[i[1]][1] = i[0];
-            }
-
+        for i in edges {
+            vertices[i[0]].push(i[1]);
+            vertices[i[1]].push(i[0]);
         }
 
 
-        /// This is written for bad stl files that have a non-closing loop
+        // This is written for bad stl files that have a non-closing loop
         for i in 0..points.len(){
             if !vertex_filled[i]{
-                //let selfpoint = vertices[i][0].clone();
-                vertices[i][1]= vertices[i][0];
+                let selfpoint = vertices[i][0].clone();
+                vertices[i].push(selfpoint);
+                //vertices[i][1]= vertices[i][0];
             }
         }
         //let mut marked = Vec::with_capacity(vertices.len());
@@ -516,7 +499,7 @@ impl StlFileSlicer {
         let mut vertices = Vec::with_capacity(100000);
         let mut vertex_filled = vec![false; 100000];
         for i in 0..100000{
-            vertices.push([0,0]);
+            vertices.push(Vec::with_capacity(2));
         }
         let mut points = FxHashMap::default();//with_capacity(10000);
         let mut reverse_points = FxHashMap::default();//with_capacity(10000);
@@ -595,7 +578,7 @@ impl StlFileSlicer {
             let mut vertices = Vec::with_capacity(100000);
             let mut vertex_filled = vec![false; 100000];
             for i in 0..100000{
-                vertices.push([0,0]);
+                vertices.push(Vec::with_capacity(2));
             }
             let mut points = FxHashMap::default();//with_capacity(10000);
             let mut reverse_points = FxHashMap::default();//with_capacity(10000);
@@ -685,7 +668,7 @@ fn main() {
     let stl_slicer = StlFileSlicer::new(new_stl_file,0.032);
 
     println!("slicing start");
-    let movepath = stl_slicer.generate_path_for_all();
+    let movepath = stl_slicer.generate_path_for_all_serial();
     //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
