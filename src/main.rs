@@ -10,6 +10,7 @@ use rayon::ThreadPool;
 use std::time::{Duration, Instant};
 use std::cmp::{Ord, PartialOrd, Ordering};
 use rustc_hash::FxHashMap;
+use std::env;
 
 
 /// OFFSET defines the offset for generating slices. First slice is below the minimum z-value of the
@@ -20,7 +21,7 @@ static OFFSET: f64 = 1e-3;
 /// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
 /// intersection points and how they are connected.
 static ROUND: u32 = 4294967295;
-static EPSILON:f64 = 1e-12;
+static EPSILON:f64 = 1e-7;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -329,7 +330,7 @@ impl StlFileSlicer {
     /// values of x, y, and z.
     fn calc_intersection_line_plane(x1: f64, y1: f64, z1: f64, x2: f64, y2: f64, z2: f64, c: f64) -> Point {
         let mut t = (c - z1) / (z2 - z1);
-        if ((z1 > c) & (z2 > c)) | ((z1 < c) & (z2 < c)) {
+        if ((z1 > c) && (z2 > c)) || ((z1 < c) && (z2 < c)) {
             t = NAN;
         }
         return Point {
@@ -356,9 +357,9 @@ impl StlFileSlicer {
             let ip2 = StlFileSlicer::calc_intersection_line_plane(p3[0], p3[1], p3[2], p2[0], p2[1], p2[2], zvalue);
             let ip3 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p3[0], p3[1], p3[2], zvalue);
 
-            if (ip1.isValid() & ip2.isValid()) { intersection_points.push([ip1, ip2]) };
-            if (ip3.isValid() & ip2.isValid()) { intersection_points.push([ip3, ip2]) };
-            if (ip1.isValid() & ip3.isValid()) { intersection_points.push([ip1, ip3]) };
+            if (ip1.isValid() && ip2.isValid()) { intersection_points.push([ip1, ip2]) };
+            if (ip3.isValid() && ip2.isValid()) { intersection_points.push([ip3, ip2]) };
+            if (ip1.isValid() && ip3.isValid()) { intersection_points.push([ip1, ip3]) };
         }
     }
 
@@ -647,15 +648,19 @@ impl StlFileSlicer {
     return mpthvec;
 }*/
 
-
+/// how to run this program
+/// program.exe [input file] [slice height] [parallel or serial] [write or nowrite] [if write : output filename]
+/// untitled22.exe c:\rustfiles\all_shapesb.stl 0.1 parallel write c:\rustfiles\movepath.csv
+/// c:\rustfiles\timecmd target\release\untitled22 c:\rustfiles\all_shapesb.stl 0.1 parallel write c:\rustfiles\movepath.csv
 fn main() {
     println!("Hello, world!");
+    let args:Vec<String> = env::args().collect();
     //  let mut filet = File::create("c:\\rustFiles\\trisinga.csv").expect("cant create file");
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
     println!("read file start");
     //let tic = Instant::now();
-    let new_stl_file = StlFile::read_binary_stl_file("c:\\rustfiles\\10.bear.stl");
+    let new_stl_file = StlFile::read_binary_stl_file(&*args[1]);//"c:\\rustfiles\\07.tesla.stl");
     //let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustfiles/10.bear.stl");
     //let toc = tic.elapsed();
     // println!("read file end, {:?}", toc);
@@ -665,13 +670,20 @@ fn main() {
     //println!("{},{},{},{:?},{}",new_stl_file.num_tri, new_stl_file.minz, new_stl_file.maxz,new_stl_file.trivals, new_stl_file.info);
     // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
     //let stl_slicer = StlFileSlicer::new(new_stl_file,1.0);
-    let stl_slicer = StlFileSlicer::new(new_stl_file,0.032);
+    let stl_slicer = StlFileSlicer::new(new_stl_file,args[2].parse::<f64>().expect("not working"));
 
     println!("slicing start");
-    let movepath = stl_slicer.generate_path_for_all_serial();
-    //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
+
+    let movepath;
+    if args[3] == "parallel"{
+        movepath = stl_slicer.generate_path_for_all();
+    } else{
+        movepath = stl_slicer.generate_path_for_all_serial();
+    }
+
+    if args[4] == "write" {
+        StlFileSlicer::write_movepath_to_file(movepath, &*args[5]);
+    }
     //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
-
-
 }
