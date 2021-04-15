@@ -1,5 +1,7 @@
+extern crate minidom;
+
 use std::{fmt, mem};
-use std::fs::File;
+use std::fs::{File, read_to_string};
 use std::io::{BufReader, Read, BufWriter};
 use std::f64::{INFINITY, NEG_INFINITY, NAN};
 use std::collections::{HashMap, BTreeMap};
@@ -11,6 +13,11 @@ use std::time::{Duration, Instant};
 use std::cmp::{Ord, PartialOrd, Ordering};
 use rustc_hash::FxHashMap;
 use std::env;
+
+
+use minidom::Element;
+use std::str::FromStr;
+//use rand::Rng;
 
 
 /// OFFSET defines the offset for generating slices. First slice is below the minimum z-value of the
@@ -34,7 +41,7 @@ impl Point{
     /// isValid checks if a point is valid. If either x, y, or z is NAN, NEG_INFINITY, or INFINITY,
     /// isValid returns false, else returns true
     pub fn isValid(&self)->bool{
-        return self.x.is_finite() & self.y.is_finite() & self.z.is_finite();
+        return self.x.is_finite() && self.y.is_finite() && self.z.is_finite();
     }
 }
 
@@ -114,7 +121,7 @@ impl Hash for Point {
         let x = half_down(self.x);
         let y = half_down(self.y);
         //let z = half_down(self.z);
-        let pp = (x*64+y) as u64;
+        let pp = (x*1024+y) as u64;
         //let pp = x*100.0+y*10.0+z;
         pp.hash(state);
     }
@@ -130,6 +137,7 @@ struct Triangle{
     maxz:f64,
     values:[f64;12],
 }
+
 
 /// StlFile contains minimum z-value and maximum z-value of the model, 80 character info string,
 /// number of triangles and Vec<Triangle>
@@ -396,7 +404,10 @@ impl StlFileSlicer {
     /// point is connected to two other points. Panics if a point is connected to only one point.
     /// Gives spurious results if a point is connected to more than two points. Output is Vec<Vec<
     /// Points>> -> list of vectors for each loop in a plane.
-    pub fn generate_path_for_layer(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>, collector: &mut Vec<Point>, vertices: &mut Vec<Vec<usize>>,  marked:&mut Vec<bool>, vertex_filled: &mut Vec<bool>) {
+    pub fn generate_path_for_layer(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>,
+                                   collector: &mut Vec<Point>, vertices: &mut Vec<Vec<usize>>,
+                                   marked:&mut Vec<bool>, vertex_filled: &mut Vec<bool>,
+                                   start_pts:&mut Vec<usize>, end_pts:&mut Vec<usize>) {
         //let mut collector = Vec::with_capacity(points_and_edges.0.len()+4000);
         //let mut vertices = Vec::with_capacity(points_and_edges.0.len()+4000);
         //let separation_pts = Vec<usize>;
@@ -413,6 +424,13 @@ impl StlFileSlicer {
         //et vertex_filled:Vec<bool> = vec![false; points.len()];
         //vertices.clear();
         // let mut vertices = Vec::with_capacity(10000);
+        // find first point
+        let first_point = 0;
+
+
+        start_pts.push(0);
+        let mut start_end_pos = 0;
+
         for i in 0..points.len() {
             //let mut m = [0,0];
             vertices[i].clear();
@@ -442,17 +460,18 @@ impl StlFileSlicer {
                 if !marked[i] {
                     //collector: Vec<Point> = Vec::with_capacity(2000);
                     // println!("error at {}",i);
-                    collector.push(points.get(&(i)).expect("no such key").clone());
+                    collector.push(points.get(&(i)).expect("no such key").clone()); start_end_pos += 1;
+
                     marked[i] = true;
                     let mut next = i;
                     while (!marked[vertices[next][0]] || !marked[vertices[next][1]]) {
                         if !marked[vertices[next][0]] {
                             marked[vertices[next][0]] = true;
-                            collector.push(points.get(&(vertices[next][0])).expect("no such key").clone());
+                            collector.push(points.get(&(vertices[next][0])).expect("no such key").clone()); start_end_pos += 1;
                             next = vertices[next][0] ;
                         } else if !marked[vertices[next][1] ] {
                             marked[vertices[next][1]] = true;
-                            collector.push(points.get(&(vertices[next][1])).expect("no such key").clone());
+                            collector.push(points.get(&(vertices[next][1])).expect("no such key").clone()); start_end_pos += 1;
                             next = vertices[next][1] ;
                         } else {
                             println!("something weird has just happened. check stl file or repair");
@@ -461,12 +480,15 @@ impl StlFileSlicer {
                     }
                     //loop closing if loop //bad stl files with unclosed geometry will have unclosed loops
                     if vertices[next][1] == i {
-                        collector.push(points.get(&(vertices[next][1])).expect("no such key").clone());}
+                        collector.push(points.get(&(vertices[next][1])).expect("no such key").clone()); start_end_pos += 1;
+                    }
                     else if vertices[next][0] == i {
-                        collector.push(points.get(&(vertices[next][0])).expect("no such key").clone());
+                        collector.push(points.get(&(vertices[next][0])).expect("no such key").clone()); start_end_pos += 1;
                     }
                     //collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
-                    collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
+                    start_pts.push(start_end_pos);
+                    end_pts.push(start_end_pos);
+                    //collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
                 }
 
 
@@ -488,12 +510,13 @@ impl StlFileSlicer {
 
     }
 
+
     /// generates path for all layers in the StlFileSlicer. Output is Vec<Vec<Vec<Points>>> ->
     /// a vector of (vector of ( vector of (for each point in loop) for each closed loop) for each
     /// layer). Parallel version. Serial version is below
     ///
     ///generates path in serial
-    pub fn generate_path_for_all_serial(&self) -> Vec<Vec<Point>> {
+    pub fn generate_path_for_all_serial(&self) -> (Vec<Vec<Point>>,Vec<Vec<usize>>, Vec<Vec<usize>>) {
         println!("find intersecting triangles start");
         let find_layers = self.find_intersecting_triangles();
         println!("find intersecting triangles end");
@@ -501,9 +524,14 @@ impl StlFileSlicer {
         let mut total = self.slices.len().clone() - 1;
         let mut counter = 0;
         //let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
+        let mut start_pts = Vec::with_capacity(self.slices.len());
+        let mut end_pts = Vec::with_capacity(self.slices.len());
         let mut all_collector = Vec::with_capacity(self.slices.len().clone());
         for i in 0..self.slices.len() {
             all_collector.push(Vec::with_capacity(20000));
+            start_pts.push(Vec::with_capacity(50));
+            end_pts.push(Vec::with_capacity(50));
+
         }
         let mut ips_temp = Vec::with_capacity(100000);
         let mut vertices = Vec::with_capacity(100000);
@@ -521,14 +549,14 @@ impl StlFileSlicer {
         for i in 0..find_layers.len() {
             self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut ips_temp);
             StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges);
-            StlFileSlicer::generate_path_for_layer(&(0), &points, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled);
+            StlFileSlicer::generate_path_for_layer(&(0), &points, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
         }
         println!("find movepath layers end");
-        return all_collector
+        return (all_collector, start_pts, end_pts)
     }
 
     /// parallel version of generate_path_for_all
-    pub fn generate_path_for_all(&self) -> Vec<Vec<Point>>{
+    pub fn generate_path_for_all(&self) -> (Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>){
         let maxthreads = num_cpus::get_physical()+1;
         println!("using all {} cpus", maxthreads-1);
         let pool = rayon::ThreadPoolBuilder::new()
@@ -540,11 +568,16 @@ impl StlFileSlicer {
         println!("group layers end");
         //let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
         let mut all_collector:Vec<Vec<Point>> =Vec::with_capacity(self.slices.len());
+        let mut start_pts = Vec::with_capacity(self.slices.len());
+        let mut end_pts = Vec::with_capacity(self.slices.len());
         for i in 0..self.slices.len(){
             //let mut loops = Vec::with_capacity(15);
-            let mut single_loop:Vec<Point> = Vec::with_capacity(10000);
+            let mut single_loop:Vec<Point> = Vec::with_capacity(20000);
             //loops.push(single_loop);
             all_collector.push(single_loop);
+            start_pts.push(Vec::with_capacity(50));
+            end_pts.push(Vec::with_capacity(50));
+
         }
         /* {
              let (all_collector1, all_collector2) = all_collector.split_at_mut(self.slices.len() / 2);
@@ -568,19 +601,21 @@ impl StlFileSlicer {
             layerno.push(i);
         }
         println!("generate mpath parallel start");
-        self.generate_mpth_parallel(all_collector.as_mut_slice(), 1, maxthreads, &pool,&find_layers,layerno.as_slice() );
+        self.generate_mpth_parallel(all_collector.as_mut_slice(), 1, maxthreads, &pool,&find_layers,layerno.as_slice() , start_pts.as_mut_slice(), end_pts.as_mut_slice());
         println!("generate mpath parallel end");
-        return all_collector;
+        return (all_collector, start_pts, end_pts);
     }
     /// helper function to generate parallel path
-    fn generate_mpth_parallel(&self, ac:&mut [Vec<Point>], cpus:usize, max_cpus:usize,pool:&ThreadPool, find_layers:&[Vec<usize>],layerno:&[usize]){
+    fn generate_mpth_parallel(&self, ac:&mut [Vec<Point>], cpus:usize, max_cpus:usize,pool:&ThreadPool, find_layers:&[Vec<usize>],layerno:&[usize],start_pts:&mut [Vec<usize>], end_pts:&mut [Vec<usize>]){
         if cpus<max_cpus{
             let aclen = ac.len();
             let(ac1,ac2) = ac.split_at_mut(aclen/2);
+            let (sp1,sp2) = start_pts.split_at_mut(aclen/2);
+            let (ep1,ep2) = end_pts.split_at_mut(aclen/2);
             //let(fl1, fl2) = find_layers.split_at(aclen/2);
             let(ln1,ln2) = layerno.split_at(aclen/2);
-            pool.install(||rayon::join(||self.generate_mpth_parallel( ac1, cpus*2, max_cpus, pool, find_layers,ln1),
-                                       ||self.generate_mpth_parallel(ac2,cpus*2,max_cpus,pool, find_layers,ln2)
+            pool.install(||rayon::join(||self.generate_mpth_parallel( ac1, cpus*2, max_cpus, pool, find_layers,ln1, sp1, ep1),
+                                       ||self.generate_mpth_parallel(ac2,cpus*2,max_cpus,pool, find_layers,ln2, sp2, ep2)
             ));
         }
         else{
@@ -599,7 +634,7 @@ impl StlFileSlicer {
                 //ac[i] = self.calc_ips_upe_mpth(find_layers,layerno[i]);
                 self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut ips_temp);
                 StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges);
-                StlFileSlicer::generate_path_for_layer(&(0), &points, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled);
+                StlFileSlicer::generate_path_for_layer(&(0), &points, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             }
 
         }
@@ -613,14 +648,201 @@ impl StlFileSlicer {
          let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
          return mpth;
      }*/
+
+    pub fn orient_movepath2(&self,  movepath: &mut(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), clockwise: bool){
+        //let mut file = File::create(filename).expect("can't create file");
+        //let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
+        for i in 0..movepath.0.len() {
+            let path = &mut movepath.0[i];
+            let start_pts = &movepath.1[i];
+            //let end_pts = &movepath.2[i];
+            //println!("start {:?}", start_pts);
+            //println!("end {:?}", end_pts);
+            //println!("end pts len", end_pts.len());
+            //println
+
+            if start_pts.len() > 0 {
+                for j in 0..start_pts.len() - 1 {
+                    let mut minpt = 0;
+                    let mut minx = f64::INFINITY;
+                    let mut miny = f64::INFINITY;
+                    let mut centerx = 0.0;
+                    let mut centery = 0.0;
+                    let mut count = 0;
+                    for k in start_pts[j]..start_pts[j + 1] {
+                        centerx = centerx + path[k].x;
+                        centery = centery + path[k].y;
+                        count = count + 1;
+                        if (path[k].x - minx).abs() > 1e-7 {
+                            if path[k].x < minx {
+                                minx = path[k].x;
+                                miny = path[k].y;
+                                minpt = k;
+                            }
+                        } else {
+                            if (path[k].y - miny).abs() > 1e-7 {
+                                if path[k].y < miny {
+                                    miny = path[k].y;
+                                    minpt = k;
+                                }
+                            }
+                            //write!(file3, "{}\n", path[k]);
+                        }
+                        //write!(file3, "NaN,NaN,NaN\n");
+                    }
+                    /* if i == 1 {
+                        println!("minx miny {} {} {}",minx, miny, minpt);
+                    }*/
+                    centerx = centerx/count as f64;
+                    centery = centery/count as f64;
+                    let a;
+                    let b;
+                    let c;
+                    if minpt == 0 {
+                        a = Point{x:centerx, y:centery, z:0.0};
+                        b = path[minpt];
+                        c = path[minpt + 1];
+                    } else if minpt == path.len() - 1 {
+                        a = Point{x:centerx, y:centery,z:0.0};
+                        b = path[minpt-1];
+                        c = path[minpt];
+                    } else {
+                        a = Point{x:centerx, y:centery,z:0.0};
+                        b = path[minpt-1];
+                        c = path[minpt];
+                    }
+
+
+                    let orientation = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+                    let mvo = (a.x - b.x).abs() * 1e-3;
+
+                    if (orientation.abs() > mvo) {
+                        //println!("layer {} loop {} orientation > 0.0 {} and clockwise {}", i,j,orientation>0.0, clockwise);
+                        //println!("orientation >0.0 and clockwise {} , {} , {}", orientation>0.0, clockwise, (orientation>0.0 && clockwise));
+                        //println!("orientation <0.0 and anticlockwise {} , {}, {}", orientation<0.0, !clockwise, (orientation<0.0 && !clockwise));
+
+                        if (orientation > 0.0 && clockwise) || (orientation < 0.0 && !clockwise) {
+                            //swap from begin to end
+                             //println!{"orientation changed for layer {} loop {}",i,j }
+                            path[start_pts[j]..start_pts[j + 1]].reverse();
+                        }
+                    } else {
+                        //println!("err : could not orient. layer{}, loop, {}, determinant of three consecutive points too small ,{}, mvo {}", i, j, orientation, mvo);
+                    }
+                }
+
+
+            }
+            //write!(file3, "NaN,NaN,NaN\n");
+        }
+
+
+
+    }
+    /// calculate centroid and check orientation with the first point
+    pub fn orient_movepath(&self,  movepath: &mut(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), clockwise: bool){
+        //let mut file = File::create(filename).expect("can't create file");
+        //let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
+        for i in 0..movepath.0.len() {
+            let path = &mut movepath.0[i];
+            let start_pts = &movepath.1[i];
+            //let end_pts = &movepath.2[i];
+            //println!("start {:?}", start_pts);
+            //println!("end {:?}", end_pts);
+            //println!("end pts len", end_pts.len());
+            //println
+
+            if start_pts.len() > 0 {
+
+                for j in 0..start_pts.len() - 1 {
+
+                    let mut minpt = 0;
+                    let mut minx = f64::INFINITY;
+                    let mut miny = f64::INFINITY;
+
+                    let mut centerx = 0.0;
+                    let mut centery = 0.0;
+                    let mut count = 0;
+
+                    for k in start_pts[j]..start_pts[j + 1] {
+                        centerx += path[k].x;
+                        centery += path[k].y;
+                        count += 1;
+
+
+                    }
+                    /* if i == 1 {
+                        println!("minx miny {} {} {}",minx, miny, minpt);
+                    }*/
+                    centerx = centerx/count as f64;
+                    centery = centery/count as f64;
+                    let a = Point {x:centerx, y:centery, z:0.0};
+                    let b = path[start_pts[j]];
+                    let c = path[start_pts[j]+1];
+
+
+
+                    let orientation = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+                    let mvo = (a.x - b.x).abs() * 1e-3;
+
+                    if (orientation.abs() > mvo) {
+                        //println!("layer {} loop {} orientation > 0.0 {} and clockwise {}", i,j,orientation>0.0, clockwise);
+                        //println!("orientation >0.0 and clockwise {} , {} , {}", orientation>0.0, clockwise, (orientation>0.0 && clockwise));
+                        //println!("orientation <0.0 and anticlockwise {} , {}, {}", orientation<0.0, !clockwise, (orientation<0.0 && !clockwise));
+
+                        if (orientation > 0.0 && clockwise) || (orientation < 0.0 && !clockwise) {
+                            //swap from begin to end
+                            //println!{"orientation changed for layer {} loop {}",i,j }
+                            path[start_pts[j]..start_pts[j + 1]].reverse();
+                        }
+                    } else {
+                        //println!("err : could not orient. layer{}, loop, {}, determinant of three consecutive points too small ,{}, mvo {}", i, j, orientation, mvo);
+                    }
+                }
+
+
+            }
+            //write!(file3, "NaN,NaN,NaN\n");
+        }
+
+
+
+    }
+
+
     /// write the movepath for the model. The continuous loops are separated by NaN,NaN,NaN, and the
     /// layers are separed by NaN,NaN,NaN.
-    pub fn write_movepath_to_file(movepath:Vec<Vec<Point>>, filename:&str){
+    pub fn write_movepath_to_file(movepath:(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), filename:&str){
         let mut file = File::create(filename).expect("can't create file");
         let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
-        for i in movepath{
-            for j in i{
-                write!(file3, "{}\n", j);
+        let st_pt = Point{x:0.0,y:0.0,z:0.0};
+
+        for i in 0..movepath.0.len(){
+            let path = &movepath.0[i];
+            let start_pts = &movepath.1[i];
+            //let end_pts = &movepath.2[i];
+            //println!("start {:?}", start_pts);
+            //println!("end {:?}", end_pts);
+            //println!("end pts len", end_pts.len());
+            //println
+            if start_pts.len() >0 {
+                for j in 0..start_pts.len() - 1 {
+                    let mut min_pt_pos = 0;
+                    let mut mindist = INFINITY;
+                    for k in start_pts[j]..start_pts[j + 1]{
+                        let dx = path[k].x-st_pt.x;
+                        let dy = path[k].y-st_pt.y;
+                        let dist = dx*dx + dy*dy;
+                        if dist<mindist{
+                            min_pt_pos = k;
+                            mindist = dist;
+                        }
+                    }
+                    for k in (min_pt_pos..start_pts[j + 1]).chain(start_pts[j]..min_pt_pos+1) {
+                        write!(file3, "{}\n", path[k]);
+                    }
+                    write!(file3, "NaN,NaN,NaN\n");
+                }
             }
         }
         write!(file3, "NaN,NaN,NaN\n");
@@ -657,6 +879,80 @@ impl StlFileSlicer {
     return mpthvec;
 }*/
 
+
+///Triangle from AMF file has three numbered vertices
+#[derive(Debug, Copy, Clone)]
+struct AmfTriangle{
+    minz:f64,
+    maxz:f64,
+    v0:usize,
+    v1:usize,
+    v2:usize,
+}
+
+///AmfFile
+struct AmfFile{
+    vertices: Vec<Point>,
+    triangles: Vec<AmfTriangle>,
+    num_tri:usize
+}
+
+impl AmfFile{
+    fn new(filename: &str)->AmfFile{
+        let mut file = File::open(filename).expect("can't open the file");
+        let mut filebuffer = BufReader::with_capacity(10000,file);
+        let mut vertices = Vec::with_capacity(10000);
+        let mut triangles = Vec::with_capacity(10000);
+        let input_string = read_to_string(filename).expect("cant read to string");
+        let root: minidom::Element = input_string.parse().expect("can't parse the data");
+        for i in root.children(){
+            if i.name() == "object" {
+                for j in i.children(){
+                    if j.name() == "mesh" {
+                        for k in j.children() {
+                            if k.name() == "vertices"{
+                                for l in k.children(){
+                                        for m in l.children(){
+                                            let mut newpt = Point{x:0.0,y:0.0,z:0.0};
+                                            for n in m.children(){
+                                                if n.name() == "x"{ newpt.x = f64::from_str(n.text().as_str()).expect("can't parse to f64")}
+                                                if n.name() == "y"{ newpt.y = f64::from_str(n.text().as_str()).expect("can't parse to f64")}
+                                                if n.name() == "z"{ newpt.z = f64::from_str(n.text().as_str()).expect("can't parse to f64")}
+                                            }
+                                            vertices.push(newpt);
+                                        }
+                                }
+                            }
+
+                            if k.name() == "volume"{
+                                for l in k.children(){
+                                    if l.name() == "triangle"{
+                                        let mut atri = AmfTriangle{ minz: 0.0, maxz: 0.0, v0:0, v1:0, v2:0};
+                                        for m in l.children(){
+                                            if m.name() == "v1" {atri.v0 = usize::from_str(m.text().as_str()).expect("can't parse to usize")};
+                                            if m.name() == "v2" {atri.v1 = usize::from_str(m.text().as_str()).expect("can't parse to usize")};
+                                            if m.name() == "v3" {atri.v2 = usize::from_str(m.text().as_str()).expect("can't parse to usize")};
+                                        }
+                                        // find minz and maxz for atri
+                                        let z1 = vertices[atri.v0].z; let z2 = vertices[atri.v1].z; let z3 = vertices[atri.v2].z;
+                                        let mut minz = z1; let mut maxz=z1;
+                                        if z2<minz{minz=z2}; if z3<minz{minz=z3};
+                                        if z2>maxz{maxz=z2}; if z3>maxz{maxz=z3};
+                                        atri.minz = minz; atri.maxz = maxz;
+                                        triangles.push(atri);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut num_tri = triangles.len();
+    AmfFile{vertices,triangles,num_tri}
+    }
+}
+
 /// how to run this program
 /// program.exe [input file] [slice height] [parallel or serial] [write or nowrite] [if write : output filename]
 /// untitled22.exe c:\rustfiles\all_shapesb.stl 0.1 parallel write c:\rustfiles\movepath.csv
@@ -667,6 +963,8 @@ fn main() {
     //  let mut filet = File::create("c:\\rustFiles\\trisinga.csv").expect("cant create file");
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
+
+    println!("{:?}",args.clone());
     println!("read file start");
     let tic = Instant::now();
     let new_stl_file = StlFile::read_binary_stl_file(&*args[1]);//"c:\\rustfiles\\07.tesla.stl");
@@ -684,7 +982,7 @@ fn main() {
 
     println!("slicing start");
 
-    let movepath;
+    let mut movepath;
     if args[3] == "parallel"{
         let tic = Instant::now();
         movepath = stl_slicer.generate_path_for_all();
@@ -696,8 +994,30 @@ fn main() {
         let toc = tic.elapsed();
         println!("time taken to slice total, {:?}", toc);
     }
+    //println!("args len {}",args.len());
+    if args.len()>7 {
+        //println!("this code is run YAAAY");
+       // println!("args 5 and 6 {} {}", &args[6], &args[7]);
+        if args[6] == "orient" {
+
+            if args[7] == "clockwise" {
+                let tic = Instant::now();
+                stl_slicer.orient_movepath(&mut movepath, true);
+                let toc = tic.elapsed();
+                println!("time taken to orient the movepath {} , {:?}", args[7], toc);
+            } else if args[7] == "anticlockwise" {
+                let tic = Instant::now();
+                stl_slicer.orient_movepath(&mut movepath, false);
+                let toc = tic.elapsed();
+                println!("time taken to orient the movepath {} , {:?}", args[7], toc);
+            } else {
+                println!("invalid orientation, use clockwise or anticlockwise, movepath will not be oriented");
+            }
+        }
+    }
 
     if args[4] == "write" {
+    println!("writing file");
         let tic = Instant::now();
         StlFileSlicer::write_movepath_to_file(movepath, &*args[5]);
         let toc = tic.elapsed();
@@ -706,3 +1026,5 @@ fn main() {
     //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
     //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
 }
+
+
