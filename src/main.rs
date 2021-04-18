@@ -512,12 +512,6 @@ impl StlFileSlicer {
 
     pub fn generate_path_for_layer2(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>, collector: &mut Vec<Point>, vertices: &mut Vec<usize>, start_end: &mut Vec<[usize;2]>, marked: &mut Vec<bool>) {
         collector.clear();
-
-
-
-
-
-
     }
 
 
@@ -557,12 +551,25 @@ impl StlFileSlicer {
 
 
         println!("total layers, {}", all_collector.len());
+        let mut tic = Instant::now();
+        let mut tocunique = tic.elapsed();
+        let mut tocintersect = tocunique.clone();
+        let mut tocgenpath = tocunique.clone();
         println!("find movepath layers start");
         for i in 0..find_layers.len() {
+            let mut tic = Instant::now();
             self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut ips_temp);
+            tocintersect = tocintersect+tic.elapsed();
+            let mut tic = Instant::now();
             StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges, &mut points_array);
+            tocunique = tocunique + tic.elapsed();
+            let mut tic = Instant::now();
             StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
+            tocgenpath = tocgenpath + tic.elapsed();
         }
+        println!("total time to find intersection pts {:?}",tocintersect);
+        println!("total time to find unique pts {:?}",tocunique);
+        println!("total time to generate path {:?}",tocgenpath);
         println!("find movepath layers end");
         return (all_collector, start_pts, end_pts)
     }
