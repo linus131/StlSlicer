@@ -402,7 +402,9 @@ impl StlFileSlicer {
         }
         points_array.resize(points.len(),Point{x:0.0,y:0.0,z:0.0});
         for i in points{
-            points_array[*i.0] = *i.1;
+            points_array[*i.0] = i.1.clone();
+            //println!("{},{}",i.0,i.1 );
+
         }
 
     }
@@ -411,7 +413,7 @@ impl StlFileSlicer {
     /// point is connected to two other points. Panics if a point is connected to only one point.
     /// Gives spurious results if a point is connected to more than two points. Output is Vec<Vec<
     /// Points>> -> list of vectors for each loop in a plane.
-    pub fn generate_path_for_layer(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>,
+    pub fn generate_path_for_layer(start_pt: &u32, points: &Vec<Point>, edges:&Vec<[usize; 2]>,
                                    collector: &mut Vec<Point>, vertices: &mut Vec<Vec<usize>>,
                                    marked:&mut Vec<bool>, vertex_filled: &mut Vec<bool>,
                                    start_pts:&mut Vec<usize>, end_pts:&mut Vec<usize>) {
@@ -468,18 +470,18 @@ impl StlFileSlicer {
                 if !marked[i] {
                     //collector: Vec<Point> = Vec::with_capacity(2000);
                     // println!("error at {}",i);
-                    collector.push(points.get(&(i)).expect("no such key").clone()); start_end_pos += 1;
+                    collector.push(points[i]); start_end_pos += 1;
 
                     marked[i] = true;
                     let mut next = i;
                     while (!marked[vertices[next][0]] || !marked[vertices[next][1]]) {
                         if !marked[vertices[next][0]] {
                             marked[vertices[next][0]] = true;
-                            collector.push(points.get(&(vertices[next][0])).expect("no such key").clone()); start_end_pos += 1;
+                            collector.push(points[vertices[next][0]]); start_end_pos += 1;
                             next = vertices[next][0] ;
                         } else if !marked[vertices[next][1] ] {
                             marked[vertices[next][1]] = true;
-                            collector.push(points.get(&(vertices[next][1])).expect("no such key").clone()); start_end_pos += 1;
+                            collector.push(points[vertices[next][1]]); start_end_pos += 1;
                             next = vertices[next][1] ;
                         } else {
                             println!("something weird has just happened. check stl file or repair");
@@ -488,10 +490,10 @@ impl StlFileSlicer {
                     }
                     //loop closing if loop //bad stl files with unclosed geometry will have unclosed loops
                     if vertices[next][1] == i {
-                        collector.push(points.get(&(vertices[next][1])).expect("no such key").clone()); start_end_pos += 1;
+                        collector.push(points[vertices[next][1]]); start_end_pos += 1;
                     }
                     else if vertices[next][0] == i {
-                        collector.push(points.get(&(vertices[next][0])).expect("no such key").clone()); start_end_pos += 1;
+                        collector.push(points[vertices[next][0]]); start_end_pos += 1;
                     }
                     //collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
                     start_pts.push(start_end_pos);
@@ -559,7 +561,7 @@ impl StlFileSlicer {
         for i in 0..find_layers.len() {
             self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut ips_temp);
             StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges, &mut points_array);
-            StlFileSlicer::generate_path_for_layer(&(0), &points, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
+            StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
         }
         println!("find movepath layers end");
         return (all_collector, start_pts, end_pts)
@@ -631,7 +633,7 @@ impl StlFileSlicer {
         else{
             let mut ips_temp = Vec::with_capacity(10000);
             let mut vertices = Vec::with_capacity(10000);
-            let mut pts_array:Vec<Point> = Vec::with_capacity(10000);
+            let mut points_array:Vec<Point> = Vec::with_capacity(10000);
             let mut vertex_filled = vec![false; 100000];
             for i in 0..100000{
                 vertices.push(Vec::with_capacity(2));
@@ -644,8 +646,8 @@ impl StlFileSlicer {
                 let kk = layerno[i];
                 //ac[i] = self.calc_ips_upe_mpth(find_layers,layerno[i]);
                 self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut ips_temp);
-                StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut pts_array);
-                StlFileSlicer::generate_path_for_layer(&(0), &points, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
+                StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut points_array);
+                StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             }
 
         }
