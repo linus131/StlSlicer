@@ -373,14 +373,16 @@ impl StlFileSlicer {
 
     /// find unique points and edges created by intersection of triangles and a plane. Unique
     /// vertices are stored as a HashMap and edges refer to the index of the vertex.
-    pub fn find_unique_points_and_edges(edges_input: &Vec<[Point; 2]>, points: &mut FxHashMap<usize, Point>, reverse_points: &mut FxHashMap<Point,usize> , edges: &mut Vec<[usize;2]>) {
+    pub fn find_unique_points_and_edges(edges_input: &Vec<[Point; 2]>, points: &mut FxHashMap<usize, Point>, reverse_points: &mut FxHashMap<Point,usize> , edges: &mut Vec<[usize;2]>,
+                                        points_array:&mut Vec<Point>) {
         //let mut points: HashMap<usize, Point> = HashMap::with_capacity(100000);
         //let mut reverse_points: HashMap<Point, usize> = HashMap::with_capacity(100000);
         points.clear();
         reverse_points.clear();
-
+        //points_array.clear();
         //let mut edges = Vec::with_capacity(40000);
         edges.clear();
+
         let mut points_counter: usize = 0;
         //let mut edges_counter: usize = 0;
         for i in edges_input {
@@ -398,6 +400,11 @@ impl StlFileSlicer {
             let e2 = reverse_points.get(&i[1]).expect("no such key e2");
             edges.push([e1.clone(), e2.clone()]);
         }
+        points_array.resize(points.len(),Point{x:0.0,y:0.0,z:0.0});
+        for i in points{
+            points_array[*i.0] = *i.1;
+        }
+
     }
 
     /// generates movepath for a given layer using breadth first search for the edges. Assumes each
@@ -414,6 +421,7 @@ impl StlFileSlicer {
         collector.clear();
         //vertices.clear();
         marked.clear();
+
         //vertex_filled.clear();
         //vertices.reserve();
         // vertex can be connected to a maximum of two other vertices for a closed loop
@@ -543,12 +551,14 @@ impl StlFileSlicer {
         let mut reverse_points = FxHashMap::default();//with_capacity(10000);
         let mut edges = Vec::with_capacity(40000);
         let mut marked = Vec::with_capacity(10000);
+        let mut points_array:Vec<Point> = Vec::with_capacity(10000);
+
 
         println!("total layers, {}", all_collector.len());
         println!("find movepath layers start");
         for i in 0..find_layers.len() {
             self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut ips_temp);
-            StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges);
+            StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges, &mut points_array);
             StlFileSlicer::generate_path_for_layer(&(0), &points, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
         }
         println!("find movepath layers end");
@@ -619,8 +629,9 @@ impl StlFileSlicer {
             ));
         }
         else{
-            let mut ips_temp = Vec::with_capacity(100000);
-            let mut vertices = Vec::with_capacity(100000);
+            let mut ips_temp = Vec::with_capacity(10000);
+            let mut vertices = Vec::with_capacity(10000);
+            let mut pts_array:Vec<Point> = Vec::with_capacity(10000);
             let mut vertex_filled = vec![false; 100000];
             for i in 0..100000{
                 vertices.push(Vec::with_capacity(2));
@@ -633,7 +644,7 @@ impl StlFileSlicer {
                 let kk = layerno[i];
                 //ac[i] = self.calc_ips_upe_mpth(find_layers,layerno[i]);
                 self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut ips_temp);
-                StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges);
+                StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut pts_array);
                 StlFileSlicer::generate_path_for_layer(&(0), &points, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             }
 
