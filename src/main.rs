@@ -512,8 +512,8 @@ impl StlFileSlicer {
 
     /// parallel version of generate_path_for_all
     pub fn generate_path_for_all(&self) -> (Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>){
-        let maxthreads = num_cpus::get_physical()+1;
-        println!("using all {} cpus", maxthreads-1);
+        let maxthreads = num_cpus::get_physical()+2;
+        println!("using all {} cpus", num_cpus::get_physical());
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(maxthreads)
             .build()
@@ -577,20 +577,11 @@ impl StlFileSlicer {
         }
     }
 
-    /// convenience function to implement iter.map on the data to implement parallel processing
 
-    pub fn orient_movepath2(&self,  movepath: &mut(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), clockwise: bool){
-        //let mut file = File::create(filename).expect("can't create file");
-        //let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
+    pub fn orient_movepath(&self,  movepath: &mut(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), clockwise: bool){
         for i in 0..movepath.0.len() {
             let path = &mut movepath.0[i];
             let start_pts = &movepath.1[i];
-            //let end_pts = &movepath.2[i];
-            //println!("start {:?}", start_pts);
-            //println!("end {:?}", end_pts);
-            //println!("end pts len", end_pts.len());
-            //println
-
             if start_pts.len() > 0 {
                 for j in 0..start_pts.len() - 1 {
                     let mut minpt = 0;
@@ -649,71 +640,10 @@ impl StlFileSlicer {
                     } else {
                     }
                 }
-
-
-            }
-        }
-
-
-
-    }
-    /// calculate centroid and check orientation with the first point
-    pub fn orient_movepath(&self,  movepath: &mut(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), clockwise: bool){
-        //let mut file = File::create(filename).expect("can't create file");
-        //let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
-        for i in 0..movepath.0.len() {
-            let path = &mut movepath.0[i];
-            let start_pts = &movepath.1[i];
-            //let end_pts = &movepath.2[i];
-            //println!("start {:?}", start_pts);
-            //println!("end {:?}", end_pts);
-            //println!("end pts len", end_pts.len());
-            //println
-
-            if start_pts.len() > 0 {
-
-                for j in 0..start_pts.len() - 1 {
-
-                    let mut minpt = 0;
-                    let mut minx = f64::INFINITY;
-                    let mut miny = f64::INFINITY;
-
-                    let mut centerx = 0.0;
-                    let mut centery = 0.0;
-                    let mut count = 0;
-
-                    for k in start_pts[j]..start_pts[j + 1] {
-                        centerx += path[k].x;
-                        centery += path[k].y;
-                        count += 1;
-
-
-                    }
-                    /* if i == 1 {
-                        println!("minx miny {} {} {}",minx, miny, minpt);
-                    }*/
-                    centerx = centerx/count as f64;
-                    centery = centery/count as f64;
-                    let a = Point {x:centerx, y:centery, z:0.0};
-                    let b = path[start_pts[j]];
-                    let c = path[start_pts[j]+1];
-
-
-                    let orientation = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
-                    let mvo = (a.x - b.x).abs() * 1e-3;
-
-                    if (orientation.abs() > mvo) {
-
-
-                        if (orientation > 0.0 && clockwise) || (orientation < 0.0 && !clockwise) {
-                            path[start_pts[j]..start_pts[j + 1]].reverse();
-                        }
-                    } else {
-                    }
-                }
             }
         }
     }
+
 
 
     /// write the movepath for the model. The continuous loops are separated by f64::NAN,f64::NAN,f64::NAN, and the
@@ -757,39 +687,9 @@ impl StlFileSlicer {
 }
 
 
-/*pub fn stl_to_movepath(points:Vec<f64>, sliceheight:f64)-> Vec<f64>{
-    let stlfile = StlFile::new(points);
-    let stlslicer = StlFileSlicer::new(stlfile, sliceheight);
-    let movepath = stlslicer.generate_path_for_all_serial();
-    let mut mpthvec = Vec::with_capacity(movepath.len());
-    //let mut layerchangepos = Vec::with_capacity(movepath.len());
-    for i in movepath{
-        //let mut loopchangepos = Vec::with_capacity(i.len());
-        //layerchangepos.push(i.len());
-        for j in i{
-            // loopchangepos.push(j.len());
-            for k in j{
-                mpthvec.push(k.x);
-                mpthvec.push(k.y);
-                mpthvec.push(k.z);
-            }
-            mpthvec.push(f64::NAN);
-            mpthvec.push(f64::NAN);
-            mpthvec.push(f64::NAN);
-        }
-        mpthvec.push(f64::NAN);
-        mpthvec.push(f64::NAN);
-        mpthvec.push(f64::NAN);
-
-    }
-    return mpthvec;
-}*/
-
-
-
 
 /// how to run this program
-/// program.exe [input file] [slice height] [parallel or serial] [write or nowrite] [if write : output filename]
+/// program.exe [input file] [slice height] [parallel or serial] [write or nowrite] [if write : output filename] [orient or noorient] [if orient: clockwise or anticlockwise]
 /// untitled22.exe c:\rustfiles\all_shapesb.stl 0.1 parallel write c:\rustfiles\movepath.csv
 /// c:\rustfiles\timecmd target\release\untitled22 c:\rustfiles\all_shapesb.stl 0.1 parallel write c:\rustfiles\movepath.csv
 fn main() {
@@ -830,12 +730,12 @@ fn main() {
 
             if args[7] == "clockwise" {
                 let tic = Instant::now();
-                stl_slicer.orient_movepath2(&mut movepath, true);
+                stl_slicer.orient_movepath(&mut movepath, true);
                 let toc = tic.elapsed();
                 println!("time taken to orient the movepath {} , {:?}", args[7], toc);
             } else if args[7] == "anticlockwise" {
                 let tic = Instant::now();
-                stl_slicer.orient_movepath2(&mut movepath, false);
+                stl_slicer.orient_movepath(&mut movepath, false);
                 let toc = tic.elapsed();
                 println!("time taken to orient the movepath {} , {:?}", args[7], toc);
             } else {
