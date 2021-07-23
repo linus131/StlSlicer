@@ -1,11 +1,8 @@
 #![feature(option_result_unwrap_unchecked)]
-extern crate minidom;
-
 
 use std::{fmt, mem};
 use std::fs::{File, read_to_string};
 use std::io::{BufReader, Read, BufWriter};
-use std::f64::{INFINITY, NEG_INFINITY, NAN};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
@@ -17,7 +14,7 @@ use rustc_hash::FxHashMap;
 use std::env;
 
 
-use minidom::Element;
+
 use std::str::FromStr;
 //use rand::Rng;
 
@@ -40,7 +37,7 @@ struct Point{
     z:f64,
 }
 impl Point{
-    /// isValid checks if a point is valid. If either x, y, or z is NAN, NEG_INFINITY, or INFINITY,
+    /// isValid checks if a point is valid. If either x, y, or z is f64::NAN, f64::NEG_INFINITY, or f64::INFINITY,
     /// isValid returns false, else returns true
     pub fn isValid(&self)->bool{
         return self.x.is_finite() && self.y.is_finite() && self.z.is_finite();
@@ -67,48 +64,10 @@ fn half_down(x:f64)->i64{
 impl PartialEq for Point {
     fn eq(&self, other: &Self) -> bool {
         return ((self.x-other.x).abs() < EPSILON && (self.y-other.y).abs() < EPSILON);//&& (self.z-other.z).abs() < EPSILON)
-        /*return (half_down(self.x) == half_down(other.x))&
-            (half_down(self.y) == half_down(other.y)) &
-            (half_down(self.z) == half_down(other.z));*/
-        /*  let spx = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-          let spy = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-          let spz = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-          let opx = (math::round::half_down(other.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-          let opy = (math::round::half_down(other.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-          let opz = (math::round::half_down(other.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-          return (spx == opx) & (spy == opy) & (spz == opz);*/
     }
 }
 /// implements Eq for Point
 impl Eq for Point {}
-
-fn iseq(a:f64,b:f64)->bool{
-    (a-b).abs()<EPSILON
-}
-/// implements Ord for Point
-impl Ord for Point {
-    fn cmp(&self, other: &Self) -> Ordering {
-        return if iseq(self.x, other.x) {
-            if iseq(self.y, other.y) {
-                Ordering::Equal
-            } else if self.y > other.y {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            }
-        } else if self.x > other.x {
-            Ordering::Greater
-        } else {
-            Ordering::Less
-        }
-    }
-}
-
-impl PartialOrd for Point {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 
 /// implements Hash for Point. Rounds x, y, and z to nearest ROUND, and takes 128 * x + 32 *y + z.
@@ -162,13 +121,13 @@ impl StlFile {
     pub fn new(points:Vec<f64>)->StlFile{
         let num_tri = points.len()/9;
         let mut trivals = Vec::with_capacity(num_tri);
-        let mut minz = INFINITY;
-        let mut maxz = NEG_INFINITY;
+        let mut minz = f64::INFINITY;
+        let mut maxz = f64::NEG_INFINITY;
 
 
         for i in 0..num_tri{
-            let mut mintri = INFINITY;
-            let mut maxtri = NEG_INFINITY;
+            let mut mintri = f64::INFINITY;
+            let mut maxtri = f64::NEG_INFINITY;
             let mut values = [0.0;12];
             for j in 0..9{
                 //println!("{},{},{}",i*12+j, i,j);
@@ -216,8 +175,8 @@ impl StlFile {
         let mut all_triangles: Vec<Triangle> = Vec::with_capacity(num_tri as usize);
 
 
-        let mut global_min_z: f64 = INFINITY;
-        let mut global_max_z: f64 = NEG_INFINITY;
+        let mut global_min_z: f64 = f64::INFINITY;
+        let mut global_max_z: f64 = f64::NEG_INFINITY;
 
         for i in 0..num_tri as usize {
             // input_file.read(&mut data_buffer).expect("cant read data");
@@ -336,12 +295,12 @@ impl StlFileSlicer {
     }
 
     /// calculate the intersection point of a line defined by (x1,y1,z1) and (x2,y2,z2), and a plane
-    /// defined by z = c. If intersection point is above or below the line, return NAN for all
+    /// defined by z = c. If intersection point is above or below the line, return f64::NAN for all
     /// values of x, y, and z.
     fn calc_intersection_line_plane(x1: f64, y1: f64, z1: f64, x2: f64, y2: f64, z2: f64, c: f64) -> Point {
         let mut t = (c - z1) / (z2 - z1);
         if ((z1 > c) && (z2 > c)) || ((z1 < c) && (z2 < c)) {
-            t = NAN;
+            t = f64::NAN;
         }
         return Point {
             x: x1 + t * (x2 - x1),
@@ -350,28 +309,6 @@ impl StlFileSlicer {
         }
     }
 
-    /// calculate intersection edges for triangles and a given plane. Return a vector of two points
-    /// that gives the edge of intersection between the triangles and the plane.
-    pub fn calc_intersection_line_plane_layer2(&self, triangles_in_layer: &Vec<usize>, zvalue: f64 , intersection_points: &mut Vec<[Point;2]>)  {
-        //let mut intersection_points: Vec<[Point; 2]> = Vec::with_capacity(80000);
-        intersection_points.clear();
-        //intersection_points.reserve(80000);
-
-        for i in triangles_in_layer {
-            let tdata = self.file.trivals[*i].values;
-            let p1 = [tdata[3], tdata[4], tdata[5]];
-            let p2 = [tdata[6], tdata[7], tdata[8]];
-            let p3 = [tdata[9], tdata[10], tdata[11]];
-
-            let ip1 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], zvalue);
-            let ip2 = StlFileSlicer::calc_intersection_line_plane(p3[0], p3[1], p3[2], p2[0], p2[1], p2[2], zvalue);
-            let ip3 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p3[0], p3[1], p3[2], zvalue);
-
-            if (ip1.isValid() && ip2.isValid()) { intersection_points.push([ip1, ip2]) };
-            if (ip3.isValid() && ip2.isValid()) { intersection_points.push([ip3, ip2]) };
-            if (ip3.isValid() && ip1.isValid()) { intersection_points.push([ip3, ip1]) };
-        }
-    }
     /// calculate intersection edges for triangles and a given plane. Return a vector of two points
     /// that gives the edge of intersection between the triangles and the plane.
     pub fn calc_intersection_line_plane_layer(&self, triangles_in_layer: &Vec<usize>, zvalue: f64 , intersection_points: &mut Vec<Point>,
@@ -402,6 +339,7 @@ impl StlFileSlicer {
     /// this helper function checks if the point is already in the list of points. If the point is already in the list, adds the index of the
     /// point to the edges, if the point is new, it adds the point to the list
     fn help_push_into_hashmap(ip1:Point, ip2:Point, points_map: &mut FxHashMap<Point,usize>, edges:&mut Vec<[usize;2]>, points: &mut Vec<Point>){
+        //superluminal_perf::begin_event("hash");
         let mut e12 = [0,0];
         let tt = points_map.get_key_value(&ip1);
         if tt.is_some(){
@@ -423,48 +361,11 @@ impl StlFileSlicer {
             points_map.insert(ip2, points_map.len());
             points.push(ip2);
         }
-        edges.push(e12)
+        edges.push(e12);
     }
 
 
 
-    /// find unique points and edges created by intersection of triangles and a plane. Unique
-    /// vertices are stored as a HashMap and edges refer to the index of the vertex.
-    pub fn find_unique_points_and_edges(edges_input: &Vec<[Point; 2]>, points: &mut FxHashMap<usize, Point>, reverse_points: &mut FxHashMap<Point,usize> , edges: &mut Vec<[usize;2]>,
-                                        points_array:&mut Vec<Point>) {
-        //let mut points: HashMap<usize, Point> = HashMap::with_capacity(100000);
-        //let mut reverse_points: HashMap<Point, usize> = HashMap::with_capacity(100000);
-        points.clear();
-        reverse_points.clear();
-        //points_array.clear();
-        //let mut edges = Vec::with_capacity(40000);
-        edges.clear();
-
-        let mut points_counter: usize = 0;
-        //let mut edges_counter: usize = 0;
-        for i in edges_input {
-            if !reverse_points.contains_key(&i[0]) {
-                reverse_points.insert(i[0], points_counter);
-                points.insert(points_counter, i[0]);
-                points_counter = points_counter + 1;
-            }
-            if !reverse_points.contains_key(&i[1]) {
-                reverse_points.insert(i[1], points_counter);
-                points.insert(points_counter, i[1]);
-                points_counter = points_counter + 1;
-            }
-            let e1 = reverse_points.get(&i[0]).expect("no such key e1");
-            let e2 = reverse_points.get(&i[1]).expect("no such key e2");
-            edges.push([e1.clone(), e2.clone()]);
-        }
-        points_array.resize(points.len(),Point{x:0.0,y:0.0,z:0.0});
-        for i in points{
-            points_array[*i.0] = i.1.clone();
-            //println!("{},{}",i.0,i.1 );
-
-        }
-
-    }
 
     /// generates movepath for a given layer using breadth first search for the edges. Assumes each
     /// point is connected to two other points. Panics if a point is connected to only one point.
@@ -481,16 +382,6 @@ impl StlFileSlicer {
         //vertices.clear();
         marked.clear();
 
-        //vertex_filled.clear();
-        //vertices.reserve();
-        // vertex can be connected to a maximum of two other vertices for a closed loop
-
-        /* for i in 0..points.len(){
-             vertices.push(Vec::with_capacity(2));
-         }*/
-        //et vertex_filled:Vec<bool> = vec![false; points.len()];
-        //vertices.clear();
-        // let mut vertices = Vec::with_capacity(10000);
         // find first point
         let first_point = 0;
 
@@ -552,10 +443,10 @@ impl StlFileSlicer {
                     else if vertices[next][0] == i {
                         collector.push(points[vertices[next][0]]); start_end_pos += 1;
                     }
-                    //collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
+                    //collector.push(Point{x:f64::f64::NAN,y:f64::f64::NAN,z:f64::f64::NAN});
                     start_pts.push(start_end_pos);
                     end_pts.push(start_end_pos);
-                    //collector.push(Point{x:f64::NAN,y:f64::NAN,z:f64::NAN});
+                    //collector.push(Point{x:f64::f64::NAN,y:f64::f64::NAN,z:f64::f64::NAN});
                 }
 
 
@@ -581,10 +472,6 @@ impl StlFileSlicer {
         println!("find intersecting triangles start");
         let find_layers = self.find_intersecting_triangles();
         println!("find intersecting triangles end");
-        let mut all_collector: Vec<Vec<Vec<Point>>> = Vec::with_capacity(self.slices.len().clone());
-        let mut total = self.slices.len().clone() - 1;
-        let mut counter = 0;
-        //let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
         let mut start_pts = Vec::with_capacity(self.slices.len());
         let mut end_pts = Vec::with_capacity(self.slices.len());
         let mut all_collector = Vec::with_capacity(self.slices.len().clone());
@@ -592,21 +479,16 @@ impl StlFileSlicer {
             all_collector.push(Vec::with_capacity(20000));
             start_pts.push(Vec::with_capacity(50));
             end_pts.push(Vec::with_capacity(50));
-
         }
-        //let mut ips_temp = Vec::with_capacity(100000);
         let mut vertices = Vec::with_capacity(100000);
         let mut vertex_filled = vec![false; 100000];
         for i in 0..100000{
             vertices.push(Vec::with_capacity(2));
         }
-       // let mut points = FxHashMap::default();//with_capacity(10000);
         let mut reverse_points = FxHashMap::default();//with_capacity(10000);
         let mut edges = Vec::with_capacity(40000);
         let mut marked = Vec::with_capacity(10000);
         let mut points_array:Vec<Point> = Vec::with_capacity(10000);
-
-
         println!("total layers, {}", all_collector.len());
         let mut tic = Instant::now();
         let mut tocunique = tic.elapsed();
@@ -617,16 +499,12 @@ impl StlFileSlicer {
             let mut tic = Instant::now();
             self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut points_array, &mut reverse_points, &mut edges);
             tocintersect = tocintersect+tic.elapsed();
-            //let mut tic = Instant::now();
-            //StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges, &mut points_array);
-            //tocunique = tocunique + tic.elapsed();
-           // println!("layer no {}", i);
+
             let mut tic = Instant::now();
             StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             tocgenpath = tocgenpath + tic.elapsed();
         }
         println!("total time to find intersection pts and unique {:?}",tocintersect);
-        //println!("total time to find unique pts {:?}",tocunique);
         println!("total time to generate path {:?}",tocgenpath);
         println!("find movepath layers end");
         return (all_collector, start_pts, end_pts)
@@ -656,23 +534,6 @@ impl StlFileSlicer {
             end_pts.push(Vec::with_capacity(50));
 
         }
-        /* {
-             let (all_collector1, all_collector2) = all_collector.split_at_mut(self.slices.len() / 2);
-             pool.install(||rayon::join(
-                 || {
-                     for i in 0..self.slices.len() / 2 {
-                         all_collector1[i] = self.calc_ips_upe_mpth(&find_layers, i);
-                     }
-                 },
-                 || {
-                     for i in self.slices.len() / 2..self.slices.len() {
-                         all_collector2[i-self.slices.len()/2] = self.calc_ips_upe_mpth(&find_layers,i);
-                     }
-                 }
-             ));
-         }
-
-         //let all_collector = iterator.iter().map(|&i| self.calc_ips_upe_mpth(&find_layers,i)).collect::<Vec<Vec<Vec<Point>>>>();*/
         let mut layerno = Vec::with_capacity(self.slices.len());
         for i in 0..self.slices.len(){
             layerno.push(i);
@@ -696,15 +557,13 @@ impl StlFileSlicer {
             ));
         }
         else{
-            //let mut ips_temp = Vec::with_capacity(10000);
             let mut vertices = Vec::with_capacity(10000);
             let mut points_array:Vec<Point> = Vec::with_capacity(10000);
             let mut vertex_filled = vec![false; 100000];
             for i in 0..100000{
                 vertices.push(Vec::with_capacity(2));
             }
-            //let mut points = FxHashMap::default();//with_capacity(10000);
-            let mut reverse_points = FxHashMap::default();//with_capacity(10000);
+            let mut reverse_points = FxHashMap::default();
             let mut edges = Vec::with_capacity(40000);
             let mut marked = Vec::with_capacity(10000);
             for i in 0..ac.len(){
@@ -719,13 +578,6 @@ impl StlFileSlicer {
     }
 
     /// convenience function to implement iter.map on the data to implement parallel processing
-    /* fn calc_ips_upe_mpth(&self, find_layers:&[Vec<usize>],kk:usize)->Vec<Vec<Point>>{
-         // println!("{} out of {}",kk,self.slices.len().clone()-1);
-         self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk]);
-         let upe = StlFileSlicer::find_unique_points_and_edges(ips);
-         let mpth = StlFileSlicer::generate_path_for_layer(&(0), upe);
-         return mpth;
-     }*/
 
     pub fn orient_movepath2(&self,  movepath: &mut(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), clockwise: bool){
         //let mut file = File::create(filename).expect("can't create file");
@@ -764,13 +616,8 @@ impl StlFileSlicer {
                                     minpt = k;
                                 }
                             }
-                            //write!(file3, "{}\n", path[k]);
                         }
-                        //write!(file3, "NaN,NaN,NaN\n");
                     }
-                    /* if i == 1 {
-                        println!("minx miny {} {} {}",minx, miny, minpt);
-                    }*/
                     centerx = centerx/count as f64;
                     centery = centery/count as f64;
                     let a;
@@ -795,23 +642,16 @@ impl StlFileSlicer {
                     let mvo = (a.x - b.x).abs() * 1e-3;
 
                     if (orientation.abs() > mvo) {
-                        //println!("layer {} loop {} orientation > 0.0 {} and clockwise {}", i,j,orientation>0.0, clockwise);
-                        //println!("orientation >0.0 and clockwise {} , {} , {}", orientation>0.0, clockwise, (orientation>0.0 && clockwise));
-                        //println!("orientation <0.0 and anticlockwise {} , {}, {}", orientation<0.0, !clockwise, (orientation<0.0 && !clockwise));
 
                         if (orientation > 0.0 && clockwise) || (orientation < 0.0 && !clockwise) {
-                            //swap from begin to end
-                             //println!{"orientation changed for layer {} loop {}",i,j }
                             path[start_pts[j]..start_pts[j + 1]].reverse();
                         }
                     } else {
-                        //println!("err : could not orient. layer{}, loop, {}, determinant of three consecutive points too small ,{}, mvo {}", i, j, orientation, mvo);
                     }
                 }
 
 
             }
-            //write!(file3, "NaN,NaN,NaN\n");
         }
 
 
@@ -859,37 +699,25 @@ impl StlFileSlicer {
                     let c = path[start_pts[j]+1];
 
 
-
                     let orientation = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
                     let mvo = (a.x - b.x).abs() * 1e-3;
 
                     if (orientation.abs() > mvo) {
-                        //println!("layer {} loop {} orientation > 0.0 {} and clockwise {}", i,j,orientation>0.0, clockwise);
-                        //println!("orientation >0.0 and clockwise {} , {} , {}", orientation>0.0, clockwise, (orientation>0.0 && clockwise));
-                        //println!("orientation <0.0 and anticlockwise {} , {}, {}", orientation<0.0, !clockwise, (orientation<0.0 && !clockwise));
+
 
                         if (orientation > 0.0 && clockwise) || (orientation < 0.0 && !clockwise) {
-                            //swap from begin to end
-                            //println!{"orientation changed for layer {} loop {}",i,j }
                             path[start_pts[j]..start_pts[j + 1]].reverse();
                         }
                     } else {
-                        //println!("err : could not orient. layer{}, loop, {}, determinant of three consecutive points too small ,{}, mvo {}", i, j, orientation, mvo);
                     }
                 }
-
-
             }
-            //write!(file3, "NaN,NaN,NaN\n");
         }
-
-
-
     }
 
 
-    /// write the movepath for the model. The continuous loops are separated by NaN,NaN,NaN, and the
-    /// layers are separed by NaN,NaN,NaN.
+    /// write the movepath for the model. The continuous loops are separated by f64::NAN,f64::NAN,f64::NAN, and the
+    /// layers are separed by f64::NAN,f64::NAN,f64::NAN.
     pub fn write_movepath_to_file(movepath:(Vec<Vec<Point>>, Vec<Vec<usize>>, Vec<Vec<usize>>), filename:&str){
         let mut file = File::create(filename).expect("can't create file");
         let mut file3 = std::io::BufWriter::with_capacity(1000000,file);
@@ -906,7 +734,7 @@ impl StlFileSlicer {
             if start_pts.len() >0 {
                 for j in 0..start_pts.len() - 1 {
                     let mut min_pt_pos = 0;
-                    let mut mindist = INFINITY;
+                    let mut mindist = f64::INFINITY;
                     for k in start_pts[j]..start_pts[j + 1]{
                         let dx = path[k].x-st_pt.x;
                         let dy = path[k].y-st_pt.y;
@@ -919,11 +747,11 @@ impl StlFileSlicer {
                     for k in (min_pt_pos..start_pts[j + 1]).chain(start_pts[j]..min_pt_pos+1) {
                         write!(file3, "{}\n", path[k]);
                     }
-                    write!(file3, "NaN,NaN,NaN\n");
+                    write!(file3, "f64::NAN,f64::NAN,f64::NAN\n");
                 }
             }
         }
-        write!(file3, "NaN,NaN,NaN\n");
+        write!(file3, "f64::NAN,f64::NAN,f64::NAN\n");
     }
 
 }
@@ -945,91 +773,20 @@ impl StlFileSlicer {
                 mpthvec.push(k.y);
                 mpthvec.push(k.z);
             }
-            mpthvec.push(NAN);
-            mpthvec.push(NAN);
-            mpthvec.push(NAN);
+            mpthvec.push(f64::NAN);
+            mpthvec.push(f64::NAN);
+            mpthvec.push(f64::NAN);
         }
-        mpthvec.push(NAN);
-        mpthvec.push(NAN);
-        mpthvec.push(NAN);
+        mpthvec.push(f64::NAN);
+        mpthvec.push(f64::NAN);
+        mpthvec.push(f64::NAN);
 
     }
     return mpthvec;
 }*/
 
 
-///Triangle from AMF file has three numbered vertices
-#[derive(Debug, Copy, Clone)]
-struct AmfTriangle{
-    minz:f64,
-    maxz:f64,
-    v0:usize,
-    v1:usize,
-    v2:usize,
-}
 
-///AmfFile
-struct AmfFile{
-    vertices: Vec<Point>,
-    triangles: Vec<AmfTriangle>,
-    num_tri:usize
-}
-
-impl AmfFile{
-    fn new(filename: &str)->AmfFile{
-        let mut file = File::open(filename).expect("can't open the file");
-        let mut filebuffer = BufReader::with_capacity(10000,file);
-        let mut vertices = Vec::with_capacity(10000);
-        let mut triangles = Vec::with_capacity(10000);
-        let input_string = read_to_string(filename).expect("cant read to string");
-        let root: minidom::Element = input_string.parse().expect("can't parse the data");
-        for i in root.children(){
-            if i.name() == "object" {
-                for j in i.children(){
-                    if j.name() == "mesh" {
-                        for k in j.children() {
-                            if k.name() == "vertices"{
-                                for l in k.children(){
-                                        for m in l.children(){
-                                            let mut newpt = Point{x:0.0,y:0.0,z:0.0};
-                                            for n in m.children(){
-                                                if n.name() == "x"{ newpt.x = f64::from_str(n.text().as_str()).expect("can't parse to f64")}
-                                                if n.name() == "y"{ newpt.y = f64::from_str(n.text().as_str()).expect("can't parse to f64")}
-                                                if n.name() == "z"{ newpt.z = f64::from_str(n.text().as_str()).expect("can't parse to f64")}
-                                            }
-                                            vertices.push(newpt);
-                                        }
-                                }
-                            }
-
-                            if k.name() == "volume"{
-                                for l in k.children(){
-                                    if l.name() == "triangle"{
-                                        let mut atri = AmfTriangle{ minz: 0.0, maxz: 0.0, v0:0, v1:0, v2:0};
-                                        for m in l.children(){
-                                            if m.name() == "v1" {atri.v0 = usize::from_str(m.text().as_str()).expect("can't parse to usize")};
-                                            if m.name() == "v2" {atri.v1 = usize::from_str(m.text().as_str()).expect("can't parse to usize")};
-                                            if m.name() == "v3" {atri.v2 = usize::from_str(m.text().as_str()).expect("can't parse to usize")};
-                                        }
-                                        // find minz and maxz for atri
-                                        let z1 = vertices[atri.v0].z; let z2 = vertices[atri.v1].z; let z3 = vertices[atri.v2].z;
-                                        let mut minz = z1; let mut maxz=z1;
-                                        if z2<minz{minz=z2}; if z3<minz{minz=z3};
-                                        if z2>maxz{maxz=z2}; if z3>maxz{maxz=z3};
-                                        atri.minz = minz; atri.maxz = maxz;
-                                        triangles.push(atri);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let mut num_tri = triangles.len();
-    AmfFile{vertices,triangles,num_tri}
-    }
-}
 
 /// how to run this program
 /// program.exe [input file] [slice height] [parallel or serial] [write or nowrite] [if write : output filename]
@@ -1045,18 +802,10 @@ fn main() {
     println!("{:?}",args.clone());
     println!("read file start");
     let tic = Instant::now();
-    let new_stl_file = StlFile::read_binary_stl_file(&*args[1]);//"c:\\rustfiles\\07.tesla.stl");
-    //let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustfiles/10.bear.stl");
+    let new_stl_file = StlFile::read_binary_stl_file(&*args[1]);
     let toc = tic.elapsed();
     println!("read file end \n time taken to read file, {:?}", toc);
 
-    //superluminal_perf::begin_event("main");
-    //let mut data = vec![-100.0, 100.0, 0.0, 0.0, 0.0, 214.45069885253906, 100.0, 100.0, 0.0, 100.0, 100.0, 0.0, 0.0, 0.0, 214.45069885253906, 100.0, -100.0, 0.0, 100.0, -100.0, 0.0, 0.0, 0.0, 214.45069885253906, -100., -100., 0., -100., -100., 0., 0., 0., 214.45069885253906, -100., 100., 0., 100., 100., 0., -100., 100., 0., 100., -100.0, 0.0, 100.0, -100.0, 0.0, -100.0, 100.0, 0.0, -100.0, -100.0,101.0, 0.0];
-
-    //let new_stl_file = StlFile::new(data);
-    //println!("{},{},{},{:?},{}",new_stl_file.num_tri, new_stl_file.minz, new_stl_file.maxz,new_stl_file.trivals, new_stl_file.info);
-    // let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustFiles/coneb.stl");
-    //let stl_slicer = StlFileSlicer::new(new_stl_file,1.0);
 
     let stl_slicer = StlFileSlicer::new(new_stl_file,args[2].parse::<f64>().expect("not working"));
 
@@ -1074,20 +823,19 @@ fn main() {
         let toc = tic.elapsed();
         println!("time taken to slice total, {:?}", toc);
     }
-    //println!("args len {}",args.len());
+
     if args.len()>7 {
-        //println!("this code is run YAAAY");
-       // println!("args 5 and 6 {} {}", &args[6], &args[7]);
+
         if args[6] == "orient" {
 
             if args[7] == "clockwise" {
                 let tic = Instant::now();
-                stl_slicer.orient_movepath(&mut movepath, true);
+                stl_slicer.orient_movepath2(&mut movepath, true);
                 let toc = tic.elapsed();
                 println!("time taken to orient the movepath {} , {:?}", args[7], toc);
             } else if args[7] == "anticlockwise" {
                 let tic = Instant::now();
-                stl_slicer.orient_movepath(&mut movepath, false);
+                stl_slicer.orient_movepath2(&mut movepath, false);
                 let toc = tic.elapsed();
                 println!("time taken to orient the movepath {} , {:?}", args[7], toc);
             } else {
@@ -1095,7 +843,6 @@ fn main() {
             }
         }
     }
-    //superluminal_perf::end_event();
     if args[4] == "write" {
     println!("writing file");
         let tic = Instant::now();
@@ -1103,8 +850,6 @@ fn main() {
         let toc = tic.elapsed();
         println!("time taken to write file {:?}",toc);
     }
-    //StlFileSlicer::write_movepath_to_file(movepath, "c:\\rustFiles\\movepath.csv");
-    //StlFileSlicer::write_movepath_to_file(movepath, "/mnt/c/rustFiles/movepath.csv");
 }
 
 
