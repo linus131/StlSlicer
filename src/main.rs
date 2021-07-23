@@ -1,3 +1,4 @@
+#![feature(option_result_unwrap_unchecked)]
 extern crate minidom;
 
 
@@ -402,15 +403,19 @@ impl StlFileSlicer {
     /// point to the edges, if the point is new, it adds the point to the list
     fn help_push_into_hashmap(ip1:Point, ip2:Point, points_map: &mut FxHashMap<Point,usize>, edges:&mut Vec<[usize;2]>, points: &mut Vec<Point>){
         let mut e12 = [0,0];
-        if points_map.contains_key(&ip1){
-            e12[0] = *points_map.get(&ip1).expect("can't find key");
-        }else{
+        let tt = points_map.get_key_value(&ip1);
+        if tt.is_some(){
+            unsafe{e12[0] = *tt.unwrap_unchecked().1};
+        }
+        else{
             e12[0] = points_map.len();
             points_map.insert(ip1, points_map.len());
             points.push(ip1);
         }
-        if points_map.contains_key(&ip2){
-            e12[1] = *points_map.get(&ip2).expect("can't find key");
+
+        let tt2 = points_map.get_key_value(&ip2);
+        if tt2.is_some(){
+            unsafe{e12[1] = *tt2.unwrap_unchecked().1};
         }
         else{
             e12[1] = points_map.len();
