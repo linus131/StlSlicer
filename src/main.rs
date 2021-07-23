@@ -3,13 +3,11 @@
 use std::{fmt, mem};
 use std::fs::{File, read_to_string};
 use std::io::{BufReader, Read, BufWriter};
-use std::collections::{HashMap, BTreeMap};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 use std::time::{Duration, Instant};
-use std::cmp::{Ord, PartialOrd, Ordering};
 use rustc_hash::FxHashMap;
 use std::env;
 
