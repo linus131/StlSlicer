@@ -417,6 +417,7 @@ impl StlFileSlicer {
         if tt2.is_some(){
             unsafe{e12[1] = *tt2.unwrap_unchecked().1};
         }
+
         else{
             e12[1] = points_map.len();
             points_map.insert(ip2, points_map.len());
