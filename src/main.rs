@@ -1,5 +1,6 @@
 extern crate minidom;
 
+
 use std::{fmt, mem};
 use std::fs::{File, read_to_string};
 use std::io::{BufReader, Read, BufWriter};
@@ -350,7 +351,7 @@ impl StlFileSlicer {
 
     /// calculate intersection edges for triangles and a given plane. Return a vector of two points
     /// that gives the edge of intersection between the triangles and the plane.
-    pub fn calc_intersection_line_plane_layer(&self, triangles_in_layer: &Vec<usize>, zvalue: f64 , intersection_points: &mut Vec<[Point;2]>)  {
+    pub fn calc_intersection_line_plane_layer2(&self, triangles_in_layer: &Vec<usize>, zvalue: f64 , intersection_points: &mut Vec<[Point;2]>)  {
         //let mut intersection_points: Vec<[Point; 2]> = Vec::with_capacity(80000);
         intersection_points.clear();
         //intersection_points.reserve(80000);
@@ -370,6 +371,56 @@ impl StlFileSlicer {
             if (ip3.isValid() && ip1.isValid()) { intersection_points.push([ip3, ip1]) };
         }
     }
+    /// calculate intersection edges for triangles and a given plane. Return a vector of two points
+    /// that gives the edge of intersection between the triangles and the plane.
+    pub fn calc_intersection_line_plane_layer(&self, triangles_in_layer: &Vec<usize>, zvalue: f64 , intersection_points: &mut Vec<Point>,
+                                              points_map: &mut FxHashMap<Point,usize>, edges:&mut Vec<[usize;2]>)  {
+        //let mut intersection_points: Vec<[Point; 2]> = Vec::with_capacity(80000);
+        intersection_points.clear();
+        points_map.clear();
+        edges.clear();
+        //intersection_points.reserve(80000);
+
+        for i in triangles_in_layer {
+            let tdata = self.file.trivals[*i].values;
+            let p1 = [tdata[3], tdata[4], tdata[5]];
+            let p2 = [tdata[6], tdata[7], tdata[8]];
+            let p3 = [tdata[9], tdata[10], tdata[11]];
+
+            let ip1 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], zvalue);
+            let ip2 = StlFileSlicer::calc_intersection_line_plane(p3[0], p3[1], p3[2], p2[0], p2[1], p2[2], zvalue);
+            let ip3 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p3[0], p3[1], p3[2], zvalue);
+
+            if (ip1.isValid() && ip2.isValid()) { StlFileSlicer::help_push_into_hashmap(ip1, ip2, points_map, edges, intersection_points)};
+            if (ip3.isValid() && ip2.isValid()) { StlFileSlicer::help_push_into_hashmap(ip2, ip3, points_map, edges, intersection_points)};
+            if (ip3.isValid() && ip1.isValid()) { StlFileSlicer::help_push_into_hashmap(ip3, ip1, points_map, edges, intersection_points)};
+        }
+       //println!("points len {}, points_map.len() {}, edges.len() {}", intersection_points.len(), points_map.len(), edges.len());
+    }
+
+    /// this helper function checks if the point is already in the list of points. If the point is already in the list, adds the index of the
+    /// point to the edges, if the point is new, it adds the point to the list
+    fn help_push_into_hashmap(ip1:Point, ip2:Point, points_map: &mut FxHashMap<Point,usize>, edges:&mut Vec<[usize;2]>, points: &mut Vec<Point>){
+        let mut e12 = [0,0];
+        if points_map.contains_key(&ip1){
+            e12[0] = *points_map.get(&ip1).expect("can't find key");
+        }else{
+            e12[0] = points_map.len();
+            points_map.insert(ip1, points_map.len());
+            points.push(ip1);
+        }
+        if points_map.contains_key(&ip2){
+            e12[1] = *points_map.get(&ip2).expect("can't find key");
+        }
+        else{
+            e12[1] = points_map.len();
+            points_map.insert(ip2, points_map.len());
+            points.push(ip2);
+        }
+        edges.push(e12)
+    }
+
+
 
     /// find unique points and edges created by intersection of triangles and a plane. Unique
     /// vertices are stored as a HashMap and edges refer to the index of the vertex.
@@ -537,13 +588,13 @@ impl StlFileSlicer {
             end_pts.push(Vec::with_capacity(50));
 
         }
-        let mut ips_temp = Vec::with_capacity(100000);
+        //let mut ips_temp = Vec::with_capacity(100000);
         let mut vertices = Vec::with_capacity(100000);
         let mut vertex_filled = vec![false; 100000];
         for i in 0..100000{
             vertices.push(Vec::with_capacity(2));
         }
-        let mut points = FxHashMap::default();//with_capacity(10000);
+       // let mut points = FxHashMap::default();//with_capacity(10000);
         let mut reverse_points = FxHashMap::default();//with_capacity(10000);
         let mut edges = Vec::with_capacity(40000);
         let mut marked = Vec::with_capacity(10000);
@@ -558,17 +609,18 @@ impl StlFileSlicer {
         println!("find movepath layers start");
         for i in 0..find_layers.len() {
             let mut tic = Instant::now();
-            self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut ips_temp);
+            self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut points_array, &mut reverse_points, &mut edges);
             tocintersect = tocintersect+tic.elapsed();
-            let mut tic = Instant::now();
-            StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges, &mut points_array);
-            tocunique = tocunique + tic.elapsed();
+            //let mut tic = Instant::now();
+            //StlFileSlicer::find_unique_points_and_edges(&ips_temp, &mut points, &mut reverse_points, &mut edges, &mut points_array);
+            //tocunique = tocunique + tic.elapsed();
+           // println!("layer no {}", i);
             let mut tic = Instant::now();
             StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges, &mut all_collector[i], &mut vertices, &mut marked, &mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             tocgenpath = tocgenpath + tic.elapsed();
         }
-        println!("total time to find intersection pts {:?}",tocintersect);
-        println!("total time to find unique pts {:?}",tocunique);
+        println!("total time to find intersection pts and unique {:?}",tocintersect);
+        //println!("total time to find unique pts {:?}",tocunique);
         println!("total time to generate path {:?}",tocgenpath);
         println!("find movepath layers end");
         return (all_collector, start_pts, end_pts)
@@ -638,22 +690,22 @@ impl StlFileSlicer {
             ));
         }
         else{
-            let mut ips_temp = Vec::with_capacity(10000);
+            //let mut ips_temp = Vec::with_capacity(10000);
             let mut vertices = Vec::with_capacity(10000);
             let mut points_array:Vec<Point> = Vec::with_capacity(10000);
             let mut vertex_filled = vec![false; 100000];
             for i in 0..100000{
                 vertices.push(Vec::with_capacity(2));
             }
-            let mut points = FxHashMap::default();//with_capacity(10000);
+            //let mut points = FxHashMap::default();//with_capacity(10000);
             let mut reverse_points = FxHashMap::default();//with_capacity(10000);
             let mut edges = Vec::with_capacity(40000);
             let mut marked = Vec::with_capacity(10000);
             for i in 0..ac.len(){
                 let kk = layerno[i];
                 //ac[i] = self.calc_ips_upe_mpth(find_layers,layerno[i]);
-                self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut ips_temp);
-                StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut points_array);
+                self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut points_array, &mut reverse_points, &mut edges);
+               // StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut points_array);
                 StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             }
 
@@ -991,6 +1043,8 @@ fn main() {
     //let new_stl_file = StlFile::read_binary_stl_file("/mnt/c/rustfiles/10.bear.stl");
     let toc = tic.elapsed();
     println!("read file end \n time taken to read file, {:?}", toc);
+
+    //superluminal_perf::begin_event("main");
     //let mut data = vec![-100.0, 100.0, 0.0, 0.0, 0.0, 214.45069885253906, 100.0, 100.0, 0.0, 100.0, 100.0, 0.0, 0.0, 0.0, 214.45069885253906, 100.0, -100.0, 0.0, 100.0, -100.0, 0.0, 0.0, 0.0, 214.45069885253906, -100., -100., 0., -100., -100., 0., 0., 0., 214.45069885253906, -100., 100., 0., 100., 100., 0., -100., 100., 0., 100., -100.0, 0.0, 100.0, -100.0, 0.0, -100.0, 100.0, 0.0, -100.0, -100.0,101.0, 0.0];
 
     //let new_stl_file = StlFile::new(data);
@@ -1035,7 +1089,7 @@ fn main() {
             }
         }
     }
-
+    //superluminal_perf::end_event();
     if args[4] == "write" {
     println!("writing file");
         let tic = Instant::now();
