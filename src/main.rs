@@ -22,10 +22,7 @@ use std::mem::transmute;
 /// model and last slice is above the maximum z-value of the model.
 static OFFSET: f64 = 1e-3;
 
-/// ROUND defines the rounding of f64 to u64 for Point struct. This is necessary to implement
-/// PartialEq and Hash traits. These traits are necessary to implement HashKey and find unique
-/// intersection points and how they are connected.
-static ROUND: u32 = 4294967295;
+///EPSILON defines the rounding error
 static EPSILON:f64 = 1e-7;
 
 /// Point struct stores x, y, and z value of the Point
@@ -49,15 +46,6 @@ impl fmt::Display for Point {
         write!(f, "{},{},{}", self.x, self.y, self.z)
     }
 }
-
-fn half_down(x:f64)->i64{
-    let x2 = (x*(ROUND as f64)*10.0).trunc() as i64;
-    let x3 = (x*(ROUND)as f64).trunc() as i64 *10;
-    let out;
-    if (x2-x3)>5{ out = (x2+5)/10}
-    else {out = x2/10}
-    return out;
-}
 /// implements PartialEq for Point. x, y, and z are rounded to nearest OFFSET and compared.
 /// Necessary for implementing HashMap.
 impl PartialEq for Point {
@@ -73,24 +61,40 @@ impl Eq for Point {}
 /// Multiplies the value by 10^ROUND and converts it to u64
 impl Hash for Point {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // Edge::max(self.pt1, self.pt2).hash(state);
-        //Edge::min(self.pt1, self.pt2).hash(state);
-        // let x = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-        // let y = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-        //let z = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
-       // let x = ((self.x) as f32).to_le_bytes();
-       // let y = ((self.y) as f32).to_le_bytes();
-
-        let x = half_down(self.x);
-        let y = half_down(self.y);
-        //let z = half_down(self.z);
-        let pp = (x*1024+y) as u64;
-        //let pp;
-       // unsafe{
-         //   pp = transmute::<[u8;8],u64>([x[0],x[1],x[2],x[3],y[0],y[1],y[2],y[3]]);
-       // }
-        //let pp = x*100.0+y*10.0+z;
+        let x = ((self.x) as f32).to_le_bytes();
+        let y = ((self.y) as f32).to_le_bytes();
+        let pp;
+        unsafe{
+            //pp = transmute::<[u8;8],u64>([x[0],x[1],x[2],x[3],y[0],y[1],y[2],y[3]]);
+            pp = transmute::<[u8;8],u64>([x[2],x[1],x[0],x[3],y[1],y[2],y[0],y[3]]);
+        }
         pp.hash(state);
+    }
+}
+
+/// Implement a simple hasher function based on modulo operator
+
+pub struct CustomHasher {
+    state: u64,
+}
+
+impl std::hash::Hasher for CustomHasher {
+    fn finish(&self) -> u64 {
+        self.state
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.state = self.state ^ u64::from_le_bytes([bytes[0],bytes[1],bytes[2],bytes[3],0,0,0,0]);
+
+    }
+}
+
+pub struct BuildCustomHasher;
+
+impl std::hash::BuildHasher for BuildCustomHasher {
+    type Hasher = CustomHasher;
+    fn build_hasher(&self) -> CustomHasher {
+        CustomHasher { state: 0 }
     }
 }
 
@@ -683,11 +687,11 @@ impl StlFileSlicer {
                     for k in (min_pt_pos..start_pts[j + 1]).chain(start_pts[j]..min_pt_pos+1) {
                         write!(file3, "{}\n", path[k]);
                     }
-                    write!(file3, "f64::NAN,f64::NAN,f64::NAN\n");
+                    write!(file3, "NAN,NAN,NAN\n");
                 }
             }
         }
-        write!(file3, "f64::NAN,f64::NAN,f64::NAN\n");
+        write!(file3, "NAN,NAN,NAN\n");
     }
 
 }
