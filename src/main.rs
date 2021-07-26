@@ -14,6 +14,7 @@ use std::env;
 
 
 use std::str::FromStr;
+use std::mem::transmute;
 //use rand::Rng;
 
 
@@ -77,10 +78,17 @@ impl Hash for Point {
         // let x = (math::round::half_down(self.x,ROUND)*(10.0)).powi(ROUND as i32) as u64;
         // let y = (math::round::half_down(self.y,ROUND)*(10.0)).powi(ROUND as i32) as u64;
         //let z = (math::round::half_down(self.z,ROUND)*(10.0)).powi(ROUND as i32) as u64;
+       // let x = ((self.x) as f32).to_le_bytes();
+       // let y = ((self.y) as f32).to_le_bytes();
+
         let x = half_down(self.x);
         let y = half_down(self.y);
         //let z = half_down(self.z);
         let pp = (x*1024+y) as u64;
+        //let pp;
+       // unsafe{
+         //   pp = transmute::<[u8;8],u64>([x[0],x[1],x[2],x[3],y[0],y[1],y[2],y[3]]);
+       // }
         //let pp = x*100.0+y*10.0+z;
         pp.hash(state);
     }
