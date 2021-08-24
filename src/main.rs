@@ -1,4 +1,4 @@
-#![feature(option_result_unwrap_unchecked)]
+//#![feature(option_result_unwrap_unchecked)]
 
 use std::{fmt, mem};
 use std::fs::{File, read_to_string};
@@ -15,6 +15,8 @@ use std::env;
 
 use std::str::FromStr;
 use std::mem::transmute;
+use fltk::{app, prelude::*, button::*, frame::*, group::*, window::Window, dialog, text::*};
+use fltk::dialog::FileDialogType;
 //use rand::Rng;
 
 
@@ -72,31 +74,6 @@ impl Hash for Point {
     }
 }
 
-/// Implement a simple hasher function based on modulo operator
-
-pub struct CustomHasher {
-    state: u64,
-}
-
-impl std::hash::Hasher for CustomHasher {
-    fn finish(&self) -> u64 {
-        self.state
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.state = self.state ^ u64::from_le_bytes([bytes[0],bytes[1],bytes[2],bytes[3],0,0,0,0]);
-
-    }
-}
-
-pub struct BuildCustomHasher;
-
-impl std::hash::BuildHasher for BuildCustomHasher {
-    type Hasher = CustomHasher;
-    fn build_hasher(&self) -> CustomHasher {
-        CustomHasher { state: 0 }
-    }
-}
 
 /// Triangle struct contains minimum z-value, maximum z-value, and the values array with first three
 /// values corresponding to the normal, second, third, and fourth three values corresponding to the
@@ -442,7 +419,7 @@ impl StlFileSlicer {
         let mut e12 = [0,0];
         let tt = points_map.get_key_value(&ip1);
         if tt.is_some(){
-            unsafe{e12[0] = *tt.unwrap_unchecked().1};
+            unsafe{e12[0] = *tt.unwrap().1};
         }
         else{
             e12[0] = points_map.len();
@@ -452,7 +429,7 @@ impl StlFileSlicer {
 
         let tt2 = points_map.get_key_value(&ip2);
         if tt2.is_some(){
-            unsafe{e12[1] = *tt2.unwrap_unchecked().1};
+            unsafe{e12[1] = *tt2.unwrap().1};
         }
 
         else{
@@ -794,7 +771,56 @@ impl StlFileSlicer {
 /// c:\rustfiles\timecmd target\release\untitled22 c:\rustfiles\all_shapesb.stl 0.1 parallel write c:\rustfiles\movepath.csv
 fn main() {
     println!("Hello, world!");
-    let args:Vec<String> = env::args().collect();
+    let app = app::App::default();
+    let mut wind = Window::new(100,100,400,300,"StlSlicer");
+    wind.end();
+    wind.show();
+    let mut button = Button::new(160,200,80,40,"Slice!");
+    wind.add(&button);
+
+   /* let mut filechooser = fltk::dialog::FileChooser::new(".","*.stl",dialog::FileChooserType::Single, "Input file",);
+    filechooser.show();
+    filechooser.window().set_pos(300,300);
+
+    while filechooser.shown(){
+        app::wait();
+    }
+    if filechooser.value(0).is_none(){
+        println!("user cancelled");
+    }
+    else {
+        println!("{}", filechooser.value(0).unwrap());
+        println!("{}", filechooser.directory().unwrap());
+    }*/
+
+    let mut file_dialog = fltk::dialog::FileDialog::new(FileDialogType::BrowseFile);
+    file_dialog.set_directory("c:\\rustfiles");
+    file_dialog.set_filter("*.stl");
+    file_dialog.set_title("Input STL File");
+
+    
+
+
+
+
+
+    file_dialog.show();
+   // let mut file_directory = ;//file_dialog.directory().as_path().to_str().clone();
+    println!("{:?}", file_dialog.filename().to_str().unwrap());
+    //println!("{:?}",file_directory );
+    //let file_name = file_dialog.filename().file_name().unwrap().to_str().clone();
+   // println!("{}", file_name.unwrap());
+
+
+
+
+
+
+
+    app.run().expect("cant run app");
+
+
+   /* let args:Vec<String> = env::args().collect();
     //  let mut filet = File::create("c:\\rustFiles\\trisinga.csv").expect("cant create file");
     // let mut file = File::create("c:\\rustFiles\\pointsinga.csv").expect("cant create file");
     // let mut file2 = File::create("c:\\rustFiles\\pointsinga2.csv").expect("cant create file");
@@ -849,7 +875,7 @@ fn main() {
         StlFileSlicer::write_movepath_to_file(movepath, &*args[5]);
         let toc = tic.elapsed();
         println!("time taken to write file {:?}",toc);
-    }
+    }*/
 }
 
 
