@@ -1,4 +1,4 @@
-#![feature(option_result_unwrap_unchecked)]
+//#![feature(option_result_unwrap_unchecked)]
 
 use std::{fmt, mem};
 use std::fs::{File, read_to_string};
@@ -57,8 +57,10 @@ impl PartialEq for Point {
 impl Eq for Point {}
 
 
-/// implements Hash for Point. Rounds x, y, and z to nearest ROUND, and takes 128 * x + 32 *y + z.
-/// Multiplies the value by 10^ROUND and converts it to u64
+/// implements Hash for Point. Uses IEEE representation of two 32-bit floats x,y and creates
+/// a single unsigned integer
+/// z is not considered as z is same for all intersection points in a layer.
+/// the unsigned integer is used to generate unique hash value for the point using FxHasher
 impl Hash for Point {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let x = ((self.x) as f32).to_le_bytes();
@@ -72,31 +74,6 @@ impl Hash for Point {
     }
 }
 
-/// Implement a simple hasher function based on modulo operator
-
-pub struct CustomHasher {
-    state: u64,
-}
-
-impl std::hash::Hasher for CustomHasher {
-    fn finish(&self) -> u64 {
-        self.state
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.state = self.state ^ u64::from_le_bytes([bytes[0],bytes[1],bytes[2],bytes[3],0,0,0,0]);
-
-    }
-}
-
-pub struct BuildCustomHasher;
-
-impl std::hash::BuildHasher for BuildCustomHasher {
-    type Hasher = CustomHasher;
-    fn build_hasher(&self) -> CustomHasher {
-        CustomHasher { state: 0 }
-    }
-}
 
 /// Triangle struct contains minimum z-value, maximum z-value, and the values array with first three
 /// values corresponding to the normal, second, third, and fourth three values corresponding to the
@@ -318,6 +295,93 @@ impl StlFileSlicer {
             z: c,
         }
     }
+    /// calculate intersection edges for triangles and a given plane. Return a vector of two points
+    /// that gives the edge of intersection between the triangles and the plane. Uses big array, has lower
+    /// precision than the HashMap version, but is faster
+    pub fn calc_intersection_line_plane_layer_mem_hungry(&self, triangles_in_layer: &Vec<usize>, zvalue: f64, intersection_points: &mut Vec<Point>,
+                                                         edges:&mut Vec<[usize;2]>) {
+        intersection_points.clear();
+        //points_map.clear();
+        edges.clear();
+        let mut ip_temp = Vec::with_capacity(100000);
+        //let mut e_temp = Vec::with_capacity(100000);
+        let mut points_check = vec![false; u32::MAX as usize];
+        let mut points_map = vec![0; u32::MAX as usize];
+
+        for i in triangles_in_layer {
+            let tdata = self.file.trivals[*i].values;
+            let p1 = [tdata[3], tdata[4], tdata[5]];
+            let p2 = [tdata[6], tdata[7], tdata[8]];
+            let p3 = [tdata[9], tdata[10], tdata[11]];
+
+            let ip1 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], zvalue);
+            let ip2 = StlFileSlicer::calc_intersection_line_plane(p3[0], p3[1], p3[2], p2[0], p2[1], p2[2], zvalue);
+            let ip3 = StlFileSlicer::calc_intersection_line_plane(p1[0], p1[1], p1[2], p3[0], p3[1], p3[2], zvalue);
+
+            if (ip1.isValid() && ip2.isValid()) { StlFileSlicer::help_push_into_list(ip1, ip2,  edges, &mut ip_temp)};
+            if (ip3.isValid() && ip2.isValid()) { StlFileSlicer::help_push_into_list(ip2, ip3,  edges, &mut ip_temp)};
+            if (ip3.isValid() && ip1.isValid()) { StlFileSlicer::help_push_into_list(ip3, ip1,  edges, &mut ip_temp)};
+        }
+
+
+        StlFileSlicer::help_remove_duplicates(&mut ip_temp, edges,&mut points_map, &mut points_check, intersection_points);
+
+    }
+
+    fn help_push_into_list(ip1:Point, ip2:Point, edges: &mut Vec<[usize;2]>, intersection_points: &mut Vec<Point>){
+        let iplen = intersection_points.len();
+        edges.push([iplen, iplen+1]);
+        intersection_points.push(ip1);
+        intersection_points.push(ip2);
+    }
+
+    fn help_remove_duplicates(intersection_points: &mut Vec<Point>, edges: &mut Vec<[usize;2]>, points_map: &mut Vec<usize>, points_check: &mut Vec<bool>, unique_points: &mut Vec<Point>){
+        let mut minx = f64::INFINITY; let mut miny = f64::INFINITY;
+        let mut maxx = f64::NEG_INFINITY; let mut maxy = f64::NEG_INFINITY;
+
+        for i in 0..intersection_points.len(){
+            if intersection_points[i].x < minx {minx = intersection_points[i].x}
+            if intersection_points[i].y < miny {miny = intersection_points[i].y}
+            if intersection_points[i].x > maxx {maxx = intersection_points[i].x}
+            if intersection_points[i].y > maxy {maxy = intersection_points[i].y}
+        }
+
+        for i in edges{
+            let pt1x = (((intersection_points[i[0]].x-minx)/(maxx-minx)) as f32).to_le_bytes();
+            let pt1y = (((intersection_points[i[0]].y-miny)/(maxy-miny)) as f32).to_le_bytes();
+            let pt2x = (((intersection_points[i[1]].x-minx)/(maxx-minx))as f32).to_le_bytes();
+            let pt2y = (((intersection_points[i[1]].y-miny)/(maxy-miny)) as f32).to_le_bytes();
+            let index1;
+            let index2;
+            unsafe{
+                index1 = mem::transmute::<[u8;8],usize>([pt1x[3],pt1x[2],pt1y[3],pt1y[2],0,0,0,0]);
+                index2 = mem::transmute::<[u8;8],usize>([pt2x[3],pt2x[2],pt2y[3],pt2y[2],0,0,0,0]);
+            }
+            if points_check[index1] {
+                i[0] = points_map[index1]
+            }
+            else{
+                unique_points.push(intersection_points[i[0]]);
+                points_check[index1] = true;
+                points_map[index1] = unique_points.len()-1;
+                i[0] = unique_points.len()-1;
+            }
+            if points_check[index2]{
+                i[1] = points_map[index2]
+            }
+            else
+            {
+                unique_points.push(intersection_points[i[1]]);
+                points_check[index2] = true;
+                points_map[index2] = unique_points.len()-1;
+                i[1] = unique_points.len()-1;
+            }
+
+        }
+
+        //println!("unique points {}",unique_points.len());
+
+    }
 
     /// calculate intersection edges for triangles and a given plane. Return a vector of two points
     /// that gives the edge of intersection between the triangles and the plane.
@@ -328,6 +392,8 @@ impl StlFileSlicer {
         points_map.clear();
         edges.clear();
         //intersection_points.reserve(80000);
+
+
 
         for i in triangles_in_layer {
             let tdata = self.file.trivals[*i].values;
@@ -468,9 +534,6 @@ impl StlFileSlicer {
         // println!("collector len {}",collector.len());
     }
 
-    pub fn generate_path_for_layer2(start_pt: &u32, points: &FxHashMap<usize, Point>, edges:&Vec<[usize; 2]>, collector: &mut Vec<Point>, vertices: &mut Vec<usize>, start_end: &mut Vec<[usize;2]>, marked: &mut Vec<bool>) {
-        collector.clear();
-    }
 
 
     /// generates path for all layers in the StlFileSlicer. Output is Vec<Vec<Vec<Points>>> ->
@@ -507,7 +570,9 @@ impl StlFileSlicer {
         println!("find movepath layers start");
         for i in 0..find_layers.len() {
             let mut tic = Instant::now();
-            self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut points_array, &mut reverse_points, &mut edges);
+            //self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut points_array, &mut reverse_points, &mut edges);
+            self.calc_intersection_line_plane_layer(&find_layers[i], self.slices[i], &mut points_array,  &mut reverse_points, &mut edges);
+            //vself.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut points_array, &mut reverse_points, &mut edges);
             tocintersect = tocintersect+tic.elapsed();
 
             let mut tic = Instant::now();
