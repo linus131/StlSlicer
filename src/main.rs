@@ -15,6 +15,7 @@ use std::env;
 
 use std::str::FromStr;
 use std::mem::transmute;
+use std::sync::{Arc, Mutex};
 //use rand::Rng;
 
 
@@ -211,7 +212,7 @@ impl StlFile {
 /// planes as slices.
 struct StlFileSlicer{
     file:StlFile,
-    slices:Vec<f64>,
+    slices:Vec<f64>
 }
 
 /// implements StlFileSlicer
@@ -233,9 +234,8 @@ impl StlFileSlicer {
     /// returns a vector of vector of indices of triangle stored in StlFile struct.
     pub fn find_intersecting_triangles(&self) -> Vec<Vec<usize>> {
         let mut intersecting_triangles_in_layer: Vec<Vec<usize>> = Vec::new();
-
         for i in 0..self.slices.len() {
-            let tri: Vec<usize> = Vec::new();
+            let tri: Vec<usize> = Vec::with_capacity(10000);
             intersecting_triangles_in_layer.push(tri);
         }
 
@@ -247,6 +247,75 @@ impl StlFileSlicer {
             }
         }
         return intersecting_triangles_in_layer;
+    }
+
+    /// find intersecting triangles in parallel using mutex guard
+    pub fn find_intersecting_triangles_par(&self, max_threads:usize, pool:&ThreadPool) -> Vec<Arc<Mutex<Vec<usize>>>>{
+        let mut intersecting_triangles_in_layer = Vec::new();
+        for i in 0..self.slices.len() {
+            let tri = Arc::new(Mutex::new(Vec::with_capacity(10000)));
+            intersecting_triangles_in_layer.push(tri);
+        }
+
+        //need to parallelize using arc mutex
+
+        /* for i in 0..self.file.num_tri {
+             let hival = self.binary_search_hi(self.file.trivals[i].maxz);
+             let loval = self.binary_search_lo(self.file.trivals[i].minz);
+             for j in loval as usize..(hival + 1) as usize {
+                  intersecting_triangles_in_layer[j].lock().unwrap().push(i);
+             }
+         }*/
+
+        self.parallelize_push_into_vec(0,self.file.num_tri,&intersecting_triangles_in_layer, 1, max_threads, pool);
+        return intersecting_triangles_in_layer
+
+    }
+
+    fn parallelize_push_into_vec(&self, tri_start: usize, tri_end:usize, intersecting_triangles_in_layer: &Vec<Arc<Mutex<Vec<usize>>>>, num_threads: usize,
+                                 max_threads: usize, pool:&ThreadPool){
+        if (num_threads>=max_threads) {
+            for i in tri_start..tri_end {
+                let hival = self.binary_search_hi(self.file.trivals[i].maxz);
+                let loval = self.binary_search_lo(self.file.trivals[i].minz);
+                for j in loval as usize..(hival + 1) as usize {
+                    let mut itl = intersecting_triangles_in_layer[j].lock().unwrap();
+                    itl.push(i);
+                }
+            }
+        }
+        else{
+            rayon::join(||self.parallelize_push_into_vec(tri_start, tri_end/2, intersecting_triangles_in_layer, num_threads*2, max_threads, pool),
+                        ||self.parallelize_push_into_vec(tri_end/2,tri_end,intersecting_triangles_in_layer,num_threads*2,max_threads,pool));
+        }
+    }
+
+    /// finds intersecting triangles without using binary search tree for constant thickness slicing
+    fn find_intersecting_triangles_const(&self) -> Vec<Vec<usize>>{
+        let mut intersecting_triangles_in_layer: Vec<Vec<usize>> = Vec::new();
+        let slice_height;
+        println!("numlayers = {}", self.slices.len());
+        if self.slices.len()<1 {
+            slice_height = 1e-1;
+        }
+        else{
+            slice_height = self.slices[1]-self.slices[0];
+        }
+        for i in 0..self.slices.len() {
+            let tri: Vec<usize> = Vec::with_capacity(10000);
+            intersecting_triangles_in_layer.push(tri);
+        }
+        println!("intersecting_triangles_in_layer size {}", intersecting_triangles_in_layer.len());
+        for i in 0..self.file.num_tri{
+            let hival = (self.file.trivals[i].maxz/slice_height) as usize + 1;
+            let loval = (self.file.trivals[i].minz/slice_height) as usize;
+            //println!("hival {}", hival);
+            //println!("loval {}", loval);
+            for j in loval..hival{
+                intersecting_triangles_in_layer[j].push(i);
+            }
+        }
+        return intersecting_triangles_in_layer
     }
 
     /// finds the lowest plane in slices vector that intersects a given triangle. Find the index of
@@ -409,7 +478,7 @@ impl StlFileSlicer {
             if (ip3.isValid() && ip2.isValid()) { StlFileSlicer::help_push_into_hashmap(ip2, ip3, points_map, edges, intersection_points)};
             if (ip3.isValid() && ip1.isValid()) { StlFileSlicer::help_push_into_hashmap(ip3, ip1, points_map, edges, intersection_points)};
         }
-       //println!("points len {}, points_map.len() {}, edges.len() {}", intersection_points.len(), points_map.len(), edges.len());
+        //println!("points len {}, points_map.len() {}, edges.len() {}", intersection_points.len(), points_map.len(), edges.len());
     }
 
     /// this helper function checks if the point is already in the list of points. If the point is already in the list, adds the index of the
@@ -543,8 +612,10 @@ impl StlFileSlicer {
     ///generates path in serial
     pub fn generate_path_for_all_serial(&self) -> (Vec<Vec<Point>>,Vec<Vec<usize>>, Vec<Vec<usize>>) {
         println!("find intersecting triangles start");
+        let tic = Instant::now();
         let find_layers = self.find_intersecting_triangles();
         println!("find intersecting triangles end");
+        println!("time for grouping triangles, {:?}", tic.elapsed());
         let mut start_pts = Vec::with_capacity(self.slices.len());
         let mut end_pts = Vec::with_capacity(self.slices.len());
         let mut all_collector = Vec::with_capacity(self.slices.len().clone());
@@ -594,7 +665,7 @@ impl StlFileSlicer {
             .build()
             .expect("can't build the threadpool");
         println!("group layers start");
-        let find_layers = self.find_intersecting_triangles();
+        let find_layers = self.find_intersecting_triangles_par(maxthreads, &pool);
         println!("group layers end");
         //let iterator = (0..self.slices.len()).map(|i| i).collect::<Vec<usize>>();
         let mut all_collector:Vec<Vec<Point>> =Vec::with_capacity(self.slices.len());
@@ -614,12 +685,12 @@ impl StlFileSlicer {
             layerno.push(i);
         }
         println!("generate mpath parallel start");
-        self.generate_mpth_parallel(all_collector.as_mut_slice(), 1, maxthreads, &pool,&find_layers,layerno.as_slice() , start_pts.as_mut_slice(), end_pts.as_mut_slice());
+        self.generate_mpth_parallel(all_collector.as_mut_slice(), 1, maxthreads, &pool, &find_layers,layerno.as_slice() , start_pts.as_mut_slice(), end_pts.as_mut_slice());
         println!("generate mpath parallel end");
         return (all_collector, start_pts, end_pts);
     }
     /// helper function to generate parallel path
-    fn generate_mpth_parallel(&self, ac:&mut [Vec<Point>], cpus:usize, max_cpus:usize,pool:&ThreadPool, find_layers:&[Vec<usize>],layerno:&[usize],start_pts:&mut [Vec<usize>], end_pts:&mut [Vec<usize>]){
+    fn generate_mpth_parallel(&self, ac:&mut [Vec<Point>], cpus:usize, max_cpus:usize,pool:&ThreadPool, find_layers:&Vec<Arc<Mutex<Vec<usize>>>>,layerno:&[usize],start_pts:&mut [Vec<usize>], end_pts:&mut [Vec<usize>]){
         if cpus<max_cpus{
             let aclen = ac.len();
             let(ac1,ac2) = ac.split_at_mut(aclen/2);
@@ -644,8 +715,9 @@ impl StlFileSlicer {
             for i in 0..ac.len(){
                 let kk = layerno[i];
                 //ac[i] = self.calc_ips_upe_mpth(find_layers,layerno[i]);
-                self.calc_intersection_line_plane_layer(&find_layers[kk], self.slices[kk], &mut points_array, &mut reverse_points, &mut edges);
-               // StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut points_array);
+                let til = find_layers[i].lock().unwrap();
+                self.calc_intersection_line_plane_layer(&til, self.slices[kk], &mut points_array, &mut reverse_points, &mut edges);
+                // StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut points_array);
                 StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
             }
 
@@ -819,7 +891,7 @@ fn main() {
         }
     }
     if args[4] == "write" {
-    println!("writing file");
+        println!("writing file");
         let tic = Instant::now();
         StlFileSlicer::write_movepath_to_file(movepath, &*args[5]);
         let toc = tic.elapsed();
