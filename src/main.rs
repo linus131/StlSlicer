@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 static OFFSET: f64 = 1e-3;
 
 ///EPSILON defines the rounding error
-static EPSILON:f64 = 1e-7;
+static EPSILON:f64 = 1e-6;
 
 /// Point struct stores x, y, and z value of the Point
 #[derive(Debug, Copy, Clone)]
@@ -715,7 +715,7 @@ impl StlFileSlicer {
             for i in 0..ac.len(){
                 let kk = layerno[i];
                 //ac[i] = self.calc_ips_upe_mpth(find_layers,layerno[i]);
-                let til = find_layers[i].lock().unwrap();
+                let til = find_layers[kk].lock().unwrap();
                 self.calc_intersection_line_plane_layer(&til, self.slices[kk], &mut points_array, &mut reverse_points, &mut edges);
                 // StlFileSlicer::find_unique_points_and_edges(&ips_temp,&mut points, &mut reverse_points, &mut edges,&mut points_array);
                 StlFileSlicer::generate_path_for_layer(&(0), &points_array, &edges,&mut ac[i], &mut vertices,&mut marked,&mut vertex_filled, &mut start_pts[i], &mut end_pts[i]);
